@@ -1,19 +1,64 @@
-// Define an 8th Wall XR Camera Pipeline Module that loads a glTF (.glb) model into a
-// threejs scene on startup.
+// Define an 8th Wall XR Camera Pipeline Module that loads a couple of glTF (.glb)
+// models into a threejs scene on startup.
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 
-// Vite turns this import into a served URL for the binary model file.
-import modelUrl from './assets/Duck.glb'
+// Vite turns these imports into served URLs for the binary model files.
+import duckUrl from './assets/Duck.glb'
+import pineconeUrl from './assets/Pinecone.glb'
 
 export const initScenePipelineModule = () => {
   const bpm = 70                        // "heartbeat" rate for the pulse animation
-  const targetHeight = 1.0              // scale the model so it stands ~1 unit tall
   const clock = new THREE.Clock()
 
-  // Container the model is loaded into. Added to the scene up front so onUpdate always
-  // has something to animate, even before the async model finishes loading.
-  const content = new THREE.Group()
+  // Each entry describes one model: where to load it from, how tall to scale it,
+  // where to place it (side by side), and the phase offset for its bob/pulse so the
+  // two don't move in perfect lockstep.
+  const items = [
+    {url: duckUrl, targetHeight: 1.0, offsetX: -0.6, spinSpeed: 0.8, phase: 0},
+    {url: pineconeUrl, targetHeight: 0.9, offsetX: 0.6, spinSpeed: -0.6, phase: Math.PI},
+  ]
+
+  // Each item's animated container, populated once its model finishes loading.
+  const groups = []
+
+  // Loads one model into its own group, normalizing scale/footing so it stands on
+  // the floor at (offsetX, 0, 0) regardless of the source model's original size/pivot.
+  const loadItem = ({url, targetHeight, offsetX}, scene) => {
+    const group = new THREE.Group()
+    group.position.x = offsetX
+    scene.add(group)
+    groups.push(group)
+
+    const loader = new GLTFLoader()
+    loader.load(
+      url,
+      (gltf) => {
+        const model = gltf.scene
+
+        const box = new THREE.Box3().setFromObject(model)
+        const size = new THREE.Vector3()
+        const center = new THREE.Vector3()
+        box.getSize(size)
+        box.getCenter(center)
+        const scale = targetHeight / size.y
+        model.scale.setScalar(scale)
+        model.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale)
+
+        model.traverse((node) => {
+          if (node.isMesh) {
+            node.castShadow = true
+          }
+        })
+
+        group.add(model)
+      },
+      undefined,
+      (err) => {
+        console.error(`Failed to load model ${url}:`, err)  // shows up in the phone's console
+      }
+    )
+  }
 
   // Populates the scene and sets the initial camera position.
   const initXrScene = ({scene, camera, renderer}) => {
@@ -26,47 +71,13 @@ export const initScenePipelineModule = () => {
     directionalLight.castShadow = true
     scene.add(directionalLight)
 
-    // Hemisphere fill light so the model's shaded side isn't pitch black.
+    // Hemisphere fill light so the models' shaded side isn't pitch black.
     const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444466, 1.0)
     scene.add(hemiLight)
 
-    // The animated container that will hold the loaded model.
-    scene.add(content)
+    items.forEach((item) => loadItem(item, scene))
 
-    // Load the .glb model asynchronously.
-    const loader = new GLTFLoader()
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        const model = gltf.scene
-
-        // Normalize size and footing: scale so the model is ~targetHeight tall, then
-        // recenter horizontally and lift so its base sits on the floor (y = 0).
-        const box = new THREE.Box3().setFromObject(model)
-        const size = new THREE.Vector3()
-        const center = new THREE.Vector3()
-        box.getSize(size)
-        box.getCenter(center)
-        const scale = targetHeight / size.y
-        model.scale.setScalar(scale)
-        model.position.set(-center.x * scale, -box.min.y * scale, -center.z * scale)
-
-        // Let every mesh in the model cast shadows.
-        model.traverse((node) => {
-          if (node.isMesh) {
-            node.castShadow = true
-          }
-        })
-
-        content.add(model)
-      },
-      undefined,
-      (err) => {
-        console.error('Failed to load model:', err)  // shows up in the phone's console
-      }
-    )
-
-    // A plane that receives the model's shadow.
+    // A plane that receives the models' shadows.
     const planeGeometry = new THREE.PlaneGeometry(2000, 2000)
     planeGeometry.rotateX(-Math.PI / 2)
 
@@ -78,7 +89,9 @@ export const initScenePipelineModule = () => {
     scene.add(plane)
 
     // Set the initial camera position relative to the scene. Must be above y = 0.
-    camera.position.set(0, 2, 2)
+    // Pulled back a bit further than the single-model version since there are two
+    // items side by side now.
+    camera.position.set(0, 2, 2.6)
   }
 
   // Return a camera pipeline module that adds scene elements on start.
@@ -110,17 +123,22 @@ export const initScenePipelineModule = () => {
       )
     },
 
-    // onUpdate is called once per frame. Spin, bob, and pulse the model.
+    // onUpdate is called once per frame. Spin, bob, and pulse each model.
     onUpdate: () => {
       const dt = clock.getDelta()       // seconds since last frame (framerate-independent)
       const t = clock.getElapsedTime()  // total seconds since start
 
-      content.rotation.y += dt * 0.8    // ~0.8 rad/s continuous spin
-      content.position.y = 0.08 + Math.sin(t * 1.5) * 0.05  // gentle hover + bob
+      groups.forEach((group, i) => {
+        const {spinSpeed, phase} = items[i]
 
-      // Subtle "heartbeat" scale pulse at `bpm`.
-      const beat = t * (bpm / 60) * Math.PI * 2
-      content.scale.setScalar(1 + Math.sin(beat) * 0.05)    // ±5% breathing
+        group.rotation.y += dt * spinSpeed
+        group.position.y = 0.08 + Math.sin(t * 1.5 + phase) * 0.05  // gentle hover + bob
+
+        // Subtle "heartbeat" scale pulse at `bpm`, offset per item so they don't
+        // beat in unison.
+        const beat = t * (bpm / 60) * Math.PI * 2 + phase
+        group.scale.setScalar(1 + Math.sin(beat) * 0.05)  // ±5% breathing
+      })
     },
   }
 }
