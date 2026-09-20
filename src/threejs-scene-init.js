@@ -1,10 +1,16 @@
 // Define an 8th Wall XR Camera Pipeline Module that loads a few glTF (.glb) models
-// into a threejs scene on startup. Tapping a character makes it react, each in its own
-// way: the pinecone hops, the acorn plays one of its animations, the glowcap lights up.
+// into a threejs scene on startup. It has two modes, switched with a button:
+//  - creatures: tapping a character makes it react, each in its own way (the pinecone hops,
+//    the acorn plays one of its animations, the glowcap lights up);
+//  - level: a small diorama of a level from the game, which you play with on-screen buttons
+//    (see level.js).
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 
+import {createGlow, updateGlow} from './glow'
+import {createLevel} from './level'
+import {measureModel, pinRootHorizontally} from './rig'
 import {isMuted, playSound, resumeAudio, setMuted} from './sound'
 import {createUi} from './ui'
 
@@ -67,62 +73,18 @@ export const initScenePipelineModule = () => {
   const glows = items.map(() => null)
   let glowLight = null  // the point light the glow drives, created in initXrScene
 
+  // The level diorama, created in initXrScene; and which of the two modes is showing.
+  let level = null
+  let mode = 'creatures'
+  let showingLevelLoading = false   // the "loading the level" note is up
+
   // The on-screen extras (loading note, hint, buttons), created in onStart.
   let ui = null
   let modelsFinished = 0    // how many models have loaded (or failed to)
-  const hintSeconds = 15    // how long the "tap a creature" hint stays if nobody taps
+  const hintSeconds = 15    // how long a hint stays if nobody taps
+  let hintTimer = null
 
   const raycaster = new THREE.Raycaster()
-
-  // Measures a model so it can be scaled and placed and, if it ships an animation clip,
-  // starts a mixer playing it. The box is "precise", built from the actual posed vertices.
-  // The default Box3 only transforms each mesh's local box by its world matrix, which is a
-  // loose fit whenever that matrix is rotated. The glowcap's skinned mesh node carries a
-  // leftover Blender rotation and mirror, so its default box came out ~45% too tall and
-  // twice too wide: the model was scaled far too small and hovered above its shadow. The
-  // idle clips only change their model's height by a few %, so their first frame is fine.
-  const measureModel = (model, clip) => {
-    const mixer = clip ? new THREE.AnimationMixer(model) : null
-    if (mixer) {
-      mixer.clipAction(clip).play()
-      mixer.setTime(0)
-    }
-    // Bones need world matrices before a skinned mesh can report its posed vertices.
-    model.updateMatrixWorld(true)
-    return {box: new THREE.Box3().setFromObject(model, true), mixer}
-  }
-
-  // The reaction clips ship with the root bone ("Hips") travelling: the jump leaps forward,
-  // the run cycle drifts. On screen the character would slide off its spot and snap back
-  // when the clip ends. Pin the root's horizontal position to where the idle clip starts and
-  // keep its vertical motion: that IS the jump, the crouch and the bend. Must run before the
-  // model is scaled or moved, so "model space" here is the model's own Y-up space.
-  const pinRootHorizontally = (model, clips, idleClip) => {
-    const hips = model.getObjectByName('Hips')
-    const anchorTrack = idleClip.tracks.find((track) => track.name === 'Hips.position')
-    if (!hips || !hips.parent || !anchorTrack) {
-      return
-    }
-    model.updateMatrixWorld(true)
-    // The root's translation is expressed in its parent's space (which carries the
-    // armature's rotation and scale). Convert to model space, pin x/z, convert back.
-    const toModel = new THREE.Matrix3().setFromMatrix4(hips.parent.matrixWorld)
-    const toParent = toModel.clone().invert()
-    const anchor = new THREE.Vector3().fromArray(anchorTrack.values, 0).applyMatrix3(toModel)
-    const v = new THREE.Vector3()
-    clips.forEach((clip) => {
-      const track = clip.tracks.find((t) => t.name === 'Hips.position')
-      if (!track || clip === idleClip) {
-        return
-      }
-      for (let i = 0; i < track.values.length; i += 3) {
-        v.fromArray(track.values, i).applyMatrix3(toModel)
-        v.x = anchor.x
-        v.z = anchor.z
-        v.applyMatrix3(toParent).toArray(track.values, i)
-      }
-    })
-  }
 
   // Sets up tap reactions for an animated model: one action per reaction clip, and the way
   // back to the idle loop once a reaction has finished.
@@ -201,74 +163,11 @@ export const initScenePipelineModule = () => {
     playSound(state.sounds[pick])
   }
 
-  // A soft round blob used as the glowcap's halo: white in the middle, fading to nothing.
-  const makeHaloTexture = () => {
-    const size = 128
-    const canvas = document.createElement('canvas')
-    canvas.width = size
-    canvas.height = size
-    const ctx = canvas.getContext('2d')
-    const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
-    // Several stops make a smooth, roughly quadratic falloff; with just two or three the
-    // edge of the disc shows up as a visible ring.
-    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)')
-    gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.55)')
-    gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.16)')
-    gradient.addColorStop(0.8, 'rgba(255, 255, 255, 0.03)')
-    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)')
-    ctx.fillStyle = gradient
-    ctx.fillRect(0, 0, size, size)
-    return new THREE.CanvasTexture(canvas)
-  }
-
-  // Sets up the glowcap's glow: its emissive spots get brighter, a green point light and a
-  // halo sprite fade in around it. `level` eases toward `target` (0 = off, 1 = on) so it
-  // fades smoothly; tapping flips `target`.
-  const createGlow = (group, model) => {
-    const materials = []
-    model.traverse((node) => {
-      if (node.isMesh && node.material && node.material.emissive) {
-        materials.push(node.material)
-      }
-    })
-
-    const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeHaloTexture(),
-      color: 0xb6ff8a,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,  // adds light instead of covering what's behind it
-      depthWrite: false,
-      depthTest: false,  // otherwise the floor plane slices off the bottom of the halo
-    }))
-    halo.scale.setScalar(1.3)
-    halo.position.y = 0.28
-    // The halo is a big see-through billboard in front of whatever stands behind the
-    // glowcap. Raycasting ignores transparency, so left alone it would swallow taps meant
-    // for those characters.
-    halo.raycast = () => {}
-    group.add(halo)
-
-    glowLight.position.set(0, 0.3, 0)
-    group.add(glowLight)
-
-    return {
-      materials,
-      baseEmissive: materials.map((material) => material.emissiveIntensity),
-      halo,
-      level: 0,
-      target: 0,
-    }
-  }
-
-  const updateGlow = (glow, dt, t) => {
-    glow.level += (glow.target - glow.level) * (1 - Math.exp(-dt * 4))
-    const flicker = 0.85 + 0.15 * Math.sin(t * 3)  // slow shimmer while lit
-    glow.materials.forEach((material, i) => {
-      material.emissiveIntensity = glow.baseEmissive[i] + glow.level * 0.9 * flicker
-    })
-    glowLight.intensity = glow.level * 1.6 * flicker
-    glow.halo.material.opacity = glow.level * 0.5 * flicker
+  // Shows a hint until the person acts on it (or a while passes).
+  const showHint = () => {
+    ui.showHint()
+    clearTimeout(hintTimer)
+    hintTimer = setTimeout(() => ui.hideHint(), hintSeconds * 1000)
   }
 
   // Called as each model finishes loading. Updates the loading note; once everything is
@@ -276,9 +175,8 @@ export const initScenePipelineModule = () => {
   const modelFinished = () => {
     modelsFinished++
     ui.setLoading(modelsFinished, items.length)
-    if (modelsFinished === items.length) {
-      ui.showHint()
-      setTimeout(() => ui.hideHint(), hintSeconds * 1000)
+    if (modelsFinished === items.length && mode === 'creatures') {
+      showHint()
     }
   }
 
@@ -343,7 +241,10 @@ export const initScenePipelineModule = () => {
           }
         }
         if (glow) {
-          glows[index] = createGlow(group, model)
+          glows[index] = createGlow(group, model, glowLight)
+          if (mode === 'creatures') {
+            glows[index].attachLight()
+          }
         }
         modelFinished()
       },
@@ -359,6 +260,8 @@ export const initScenePipelineModule = () => {
   const initXrScene = ({scene, camera, renderer}) => {
     // Enable shadows in the renderer.
     renderer.shadowMap.enabled = true
+    // The level diorama is a box: anything outside it is clipped away.
+    renderer.localClippingEnabled = true
 
     // Image-based lighting. The models use PBR materials, which look flat and dark
     // with only direct lights; a small built-in "room" environment gives them soft,
@@ -390,13 +293,25 @@ export const initScenePipelineModule = () => {
     const hemiLight = new THREE.HemisphereLight(0xdde8ff, 0x444466, 0.4)
     scene.add(hemiLight)
 
-    // The glowcap's glow light. It is created up front at zero intensity, because adding a
-    // light later changes the light count and makes three recompile every lit material,
-    // which would freeze the first tap for a moment. Once the glowcap loads it moves in.
+    // The glowcap's glow light, shared by both modes (only one glowcap shows at a time).
+    // It is created up front at zero intensity, because adding a light later changes the
+    // light count and makes three recompile every lit material, which would freeze the
+    // first tap for a moment. Each glow moves it into its own group when it is on show.
     glowLight = new THREE.PointLight(0x9dff7a, 0, 2.5, 2)
     scene.add(glowLight)
 
     items.forEach((item, i) => loadItem(i, scene))
+
+    // The level diorama. Hidden (and not even loaded) until its button is pressed.
+    level = createLevel({
+      glowLight,
+      onEvent: (name) => {
+        if (name === 'won') {
+          ui.notice(ui.text.won, 3500)
+        }
+      },
+    })
+    scene.add(level.root)
 
     // A plane that receives the models' shadows.
     const planeGeometry = new THREE.PlaneGeometry(2000, 2000)
@@ -414,16 +329,19 @@ export const initScenePipelineModule = () => {
     camera.position.set(0, 2, 3.5)
   }
 
-  // Casts a ray from the tap position through the camera and returns the index into
-  // `items`/`groups` of whichever character was hit, or -1 if the tap missed them all.
-  const hitTestItems = (touch, canvas, camera) => {
+  // Points the raycaster along the ray from the camera through a tap.
+  const aimRaycaster = (touch, canvas, camera) => {
     const rect = canvas.getBoundingClientRect()
     const ndc = new THREE.Vector2(
       ((touch.clientX - rect.left) / rect.width) * 2 - 1,
       -((touch.clientY - rect.top) / rect.height) * 2 + 1
     )
     raycaster.setFromCamera(ndc, camera)
+  }
 
+  // Returns the index into `items`/`groups` of whichever character the aimed ray hits, or
+  // -1 if it missed them all.
+  const hitTestItems = () => {
     const hits = raycaster.intersectObjects(groups, true)  // true: check nested meshes too
     if (hits.length === 0) {
       return -1
@@ -449,6 +367,42 @@ export const initScenePipelineModule = () => {
       glows[index].target = glows[index].target ? 0 : 1
       playSound(glows[index].target ? 'glowOn' : 'glowOff')
     }
+  }
+
+  // Switches between the creature showcase and the level diorama.
+  const setMode = (next) => {
+    mode = next
+    const inLevel = next === 'level'
+    groups.forEach((group) => {
+      if (group) {
+        group.visible = !inLevel
+      }
+    })
+    glows.forEach((glow) => {
+      if (!glow) {
+        return
+      }
+      glow.target = 0
+      glow.level = 0
+      if (!inLevel) {
+        glow.attachLight()   // the shared light moves back to the showcase glowcap
+      }
+    })
+    glowLight.intensity = 0
+    if (inLevel) {
+      level.ensureLoaded()   // the first time this loads the level's models
+      if (!level.isReady()) {
+        showingLevelLoading = true
+        ui.notice(ui.text.loadingLevel, 20000)   // taken down as soon as it is ready (see onUpdate)
+      }
+    }
+    if (!inLevel) {
+      showingLevelLoading = false
+      ui.hideNotice()
+    }
+    level.setActive(inLevel)
+    ui.setMode(next)
+    showHint()
   }
 
   // Takes a photo of the camera feed with the characters in it and shows it to share or save.
@@ -483,6 +437,8 @@ export const initScenePipelineModule = () => {
           return isMuted()
         },
         onPhoto: canTakePhoto ? takePhoto : null,
+        onToggleMode: () => setMode(mode === 'creatures' ? 'level' : 'creatures'),
+        onGesture: resumeAudio,
       })
       ui.setLoading(0, items.length)
 
@@ -502,13 +458,23 @@ export const initScenePipelineModule = () => {
       // scheduled by then; this releases them.
       canvas.addEventListener('touchend', resumeAudio)
 
-      // Tap a character to make it react; tap empty space to recenter content instead.
+      // Tap a character to make it react (in the level: tap the Glowcap to switch its
+      // light); tap empty space to recenter content instead.
       canvas.addEventListener(
         'touchstart', (e) => {
           if (e.touches.length !== 1) {
             return
           }
-          const hitIndex = hitTestItems(e.touches[0], canvas, camera)
+          aimRaycaster(e.touches[0], canvas, camera)
+          if (mode === 'level') {
+            if (level.tapGlowcap(raycaster)) {
+              ui.hideHint()
+            } else {
+              XR8.XrController.recenter()
+            }
+            return
+          }
+          const hitIndex = hitTestItems()
           if (hitIndex !== -1) {
             onTap(hitIndex)
           } else {
@@ -518,11 +484,21 @@ export const initScenePipelineModule = () => {
       )
     },
 
-    // onUpdate is called once per frame. Advance the skeletal animations, then spin, bob
-    // and pulse each model, adding a hop on top for whichever one was just tapped.
+    // onUpdate is called once per frame. In the level mode the level runs itself. In the
+    // creature mode: advance the skeletal animations, then spin, bob and pulse each model,
+    // adding a hop on top for whichever one was just tapped.
     onUpdate: () => {
       const dt = clock.getDelta()       // seconds since last frame (framerate-independent)
       const t = clock.getElapsedTime()  // total seconds since start
+
+      if (mode === 'level') {
+        if (showingLevelLoading && level.isReady()) {
+          showingLevelLoading = false
+          ui.hideNotice()
+        }
+        level.update(dt, t, ui.getInput())
+        return
+      }
 
       mixers.forEach((mixer) => mixer.update(dt))
       glows.forEach((glow) => glow && updateGlow(glow, dt, t))

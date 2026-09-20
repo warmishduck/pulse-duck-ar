@@ -36,8 +36,10 @@ body {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   font-size: 15px;
-  line-height: 1.2;
-  white-space: nowrap;
+  line-height: 1.25;
+  width: max-content;
+  max-width: calc(100vw - 56px);  /* long hints wrap instead of running off the screen */
+  text-align: center;
   opacity: 0;
   transform: translate(-50%, 8px);
   transition: opacity 0.3s, transform 0.3s;
@@ -48,7 +50,7 @@ body {
 }
 .ui-loading,
 .ui-notice {
-  top: calc(env(safe-area-inset-top, 0px) + 14px);
+  top: calc(env(safe-area-inset-top, 0px) + 66px);  /* below the row of buttons at the top */
 }
 .ui-hint {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 116px);
@@ -71,6 +73,61 @@ body {
 .ui-mute {
   top: calc(env(safe-area-inset-top, 0px) + 10px);
   right: 12px;
+}
+
+/* The pill that switches between the creature showcase and the level. */
+.ui-mode {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: 12px;
+  height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 22px;
+  background: rgba(18, 22, 26, 0.72);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* The level's buttons: left/right on one side, jump on the other, either side of the
+   camera button. They only show while the level is up. */
+.ui-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 30px);
+  display: none;
+  justify-content: space-between;
+  padding: 0 14px;
+  pointer-events: none;
+}
+.ui-controls.is-visible {
+  display: flex;
+}
+.ui-dpad {
+  display: flex;
+  gap: 8px;
+}
+.ui-control {
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(18, 22, 26, 0.6);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-size: 26px;
+  line-height: 58px;
+  padding: 0;
+  touch-action: none;             /* no scrolling or zooming while a thumb is on it */
+  -webkit-touch-callout: none;
+}
+.ui-control.is-down {
+  background: rgba(93, 255, 176, 0.5);
 }
 
 /* The round camera button at the bottom centre. */
