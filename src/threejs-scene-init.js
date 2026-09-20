@@ -5,6 +5,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 
 // Vite turns these imports into served URLs for the binary model files.
+import acornUrl from './assets/Acorn.glb'
 import duckUrl from './assets/Duck.glb'
 import glowcapUrl from './assets/Glowcap.glb'
 import pineconeUrl from './assets/Pinecone.glb'
@@ -17,13 +18,16 @@ export const initScenePipelineModule = () => {
 
   // Each entry describes one model: where to load it from, how tall to scale it, where
   // it stands on the floor (x/z), and the phase offset for its idle bob/pulse so they
-  // don't all move in lockstep. Laid out as a triangle: the glowcap in front, the duck
-  // and pinecone behind it on either side. That keeps the group narrow enough for a
-  // portrait phone screen while still giving each character its own room to spin.
+  // don't all move in lockstep. Laid out as two rows: the tall characters (acorn,
+  // pinecone) far at the back and the short ones (duck, glowcap) up front. The rows are
+  // spaced deep enough that a front character never covers the one behind it, even at
+  // a shallow viewing angle. Using depth instead of width keeps the group narrow, which
+  // matters on a portrait phone screen (tall, so depth is cheap; narrow, so width is not).
   const items = [
-    {url: duckUrl, targetHeight: 0.62, x: -0.62, z: -0.2, spinSpeed: 0.8, phase: 0},
-    {url: glowcapUrl, targetHeight: 0.55, x: 0, z: 0.4, spinSpeed: 0.5, phase: (Math.PI * 2) / 3},
-    {url: pineconeUrl, targetHeight: 0.8, x: 0.62, z: -0.2, spinSpeed: -0.6, phase: (Math.PI * 4) / 3},
+    {url: acornUrl, targetHeight: 0.85, x: -0.4, z: -1.05, spinSpeed: 0.7, phase: 0},
+    {url: pineconeUrl, targetHeight: 0.8, x: 0.4, z: -1.05, spinSpeed: -0.6, phase: Math.PI / 2},
+    {url: duckUrl, targetHeight: 0.62, x: -0.4, z: 0.6, spinSpeed: 0.8, phase: Math.PI},
+    {url: glowcapUrl, targetHeight: 0.55, x: 0.4, z: 0.6, spinSpeed: -0.5, phase: (Math.PI * 3) / 2},
   ]
 
   // Each item's animated container, populated once its model finishes loading.
@@ -31,7 +35,7 @@ export const initScenePipelineModule = () => {
   // Elapsed-clock timestamp when an item was last tapped, or null if not hopping.
   // Parallel array to `items`/`groups`.
   const jumpStart = items.map(() => null)
-  // Skeletal-animation mixers for models that ship with a built-in clip (e.g. glowcap).
+  // Skeletal-animation mixers for models that ship with a built-in clip (glowcap, acorn).
   const mixers = []
 
   const raycaster = new THREE.Raycaster()
