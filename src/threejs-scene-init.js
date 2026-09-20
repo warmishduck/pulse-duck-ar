@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
 
+import {isMuted, playSound, resumeAudio, setMuted} from './sound'
+import {createUi} from './ui'
+
 // Vite turns these imports into served URLs for the binary model files.
 import acornUrl from './assets/Acorn.glb'
 import glowcapUrl from './assets/Glowcap.glb'
@@ -24,8 +27,10 @@ export const initScenePipelineModule = () => {
   //   yaw        starting rotation about the vertical axis, in radians
   //   hover/bob  how high it floats above the floor and how much it bobs (defaults 0.08/0.05)
   //   hop        set false to skip the tap-triggered hop
-  //   reactions  built-in clips to play on tap (random pick, never the same one twice in a
-  //              row), then it eases back to its 'Idle' clip. `repeat` loops a short clip.
+  //   hopSound   sound to play with the hop (see sound.js)
+  //   reactions  built-in clips to play on tap, each with the sound that goes with it. They
+  //              come out in a shuffled order, then it eases back to its 'Idle' clip.
+  //              `repeat` loops a short clip.
   //   glow       tapping toggles a glow instead
   // The tall characters (acorn, pinecone) stand far at the back and the short glowcap up
   // front, spaced by depth rather than width: that keeps the group narrow, which matters
@@ -35,14 +40,17 @@ export const initScenePipelineModule = () => {
       url: acornUrl, targetHeight: 0.85, x: -0.45, z: -0.85, phase: 0,
       yaw: 0.3, hover: 0, bob: 0, hop: false,
       reactions: [
-        {clip: 'Jump'},
-        {clip: 'Ouch'},
-        {clip: 'PickUp'},
-        {clip: 'PickThrow'},
-        {clip: 'Run', repeat: 3},
+        {clip: 'Jump', sound: 'boing'},
+        {clip: 'Ouch', sound: 'squeak'},
+        {clip: 'PickUp', sound: 'plink'},
+        {clip: 'PickThrow', sound: 'whoosh'},
+        {clip: 'Run', repeat: 3, sound: 'patter'},
       ],
     },
-    {url: pineconeUrl, targetHeight: 0.8, x: 0.45, z: -0.85, spinSpeed: -0.6, phase: Math.PI / 2},
+    {
+      url: pineconeUrl, targetHeight: 0.8, x: 0.45, z: -0.85, spinSpeed: -0.6, phase: Math.PI / 2,
+      hopSound: 'pop',
+    },
     {url: glowcapUrl, targetHeight: 0.55, x: 0, z: 0.5, spinSpeed: -0.5, phase: Math.PI, hop: false, glow: true},
   ]
 
@@ -58,6 +66,11 @@ export const initScenePipelineModule = () => {
   const reactionStates = items.map(() => null)
   const glows = items.map(() => null)
   let glowLight = null  // the point light the glow drives, created in initXrScene
+
+  // The on-screen extras (loading note, hint, buttons), created in onStart.
+  let ui = null
+  let modelsFinished = 0    // how many models have loaded (or failed to)
+  const hintSeconds = 15    // how long the "tap a creature" hint stays if nobody taps
 
   const raycaster = new THREE.Raycaster()
 
@@ -115,7 +128,8 @@ export const initScenePipelineModule = () => {
   // back to the idle loop once a reaction has finished.
   const setupReactions = (index, mixer, idleAction, clips, reactions) => {
     const list = []
-    reactions.forEach(({clip, repeat}) => {
+    const sounds = []  // parallel to `list`: the sound that goes with each reaction
+    reactions.forEach(({clip, repeat, sound}) => {
       const found = THREE.AnimationClip.findByName(clips, clip)
       if (!found) {
         console.warn(`Reaction clip "${clip}" not found in the model`)
@@ -125,6 +139,7 @@ export const initScenePipelineModule = () => {
       action.setLoop(repeat ? THREE.LoopRepeat : THREE.LoopOnce, repeat || 1)
       action.clampWhenFinished = true  // hold the last pose while easing back to idle
       list.push(action)
+      sounds.push(sound)
     })
     if (list.length === 0) {
       return
@@ -133,7 +148,7 @@ export const initScenePipelineModule = () => {
     // The first tap always plays the first listed reaction (the jump); the rest of that
     // round follows in random order.
     const rest = shuffled(list.map((action, i) => i).slice(1))
-    const state = {idle: idleAction, list, current: null, queue: [0, ...rest], last: -1}
+    const state = {idle: idleAction, list, sounds, current: null, queue: [0, ...rest], last: -1}
     reactionStates[index] = state
     mixer.addEventListener('finished', (event) => {
       // Ignore clips that were interrupted by a newer tap; only the current one returns to idle.
@@ -183,6 +198,7 @@ export const initScenePipelineModule = () => {
     const from = state.current || state.idle
     next.reset().play().crossFadeFrom(from, state.current ? 0.2 : 0.25, false)
     state.current = next
+    playSound(state.sounds[pick])
   }
 
   // A soft round blob used as the glowcap's halo: white in the middle, fading to nothing.
@@ -255,6 +271,17 @@ export const initScenePipelineModule = () => {
     glow.halo.material.opacity = glow.level * 0.5 * flicker
   }
 
+  // Called as each model finishes loading. Updates the loading note; once everything is
+  // in, it shows the "tap a creature" hint, which goes away on the first tap (or after a while).
+  const modelFinished = () => {
+    modelsFinished++
+    ui.setLoading(modelsFinished, items.length)
+    if (modelsFinished === items.length) {
+      ui.showHint()
+      setTimeout(() => ui.hideHint(), hintSeconds * 1000)
+    }
+  }
+
   // Loads one model into its own group, normalizing scale/footing so it stands on the
   // floor at (x, 0, z) regardless of the source model's original size/pivot.
   const loadItem = (index, scene) => {
@@ -318,10 +345,12 @@ export const initScenePipelineModule = () => {
         if (glow) {
           glows[index] = createGlow(group, model)
         }
+        modelFinished()
       },
       undefined,
       (err) => {
         console.error(`Failed to load model ${url}:`, err)  // shows up in the phone's console
+        modelFinished()  // count it anyway, or the loading note would never go away
       }
     )
   }
@@ -410,13 +439,30 @@ export const initScenePipelineModule = () => {
 
   // Makes the tapped character react in whatever way its entry in `items` describes.
   const onTap = (index) => {
+    ui.hideHint()  // they found out they can tap
     if (items[index].hop !== false) {
       jumpStart[index] = clock.getElapsedTime()
+      playSound(items[index].hopSound)
     }
     playReaction(index)  // does nothing for models without reactions
     if (glows[index]) {
       glows[index].target = glows[index].target ? 0 : 1
+      playSound(glows[index].target ? 'glowOn' : 'glowOff')
     }
+  }
+
+  // Takes a photo of the camera feed with the characters in it and shows it to share or save.
+  const takePhoto = () => {
+    resumeAudio()
+    playSound('shutter')
+    ui.flash()
+    XR8.CanvasScreenshot.takeScreenshot().then(
+      (base64Jpeg) => ui.showPhoto(base64Jpeg),
+      (error) => {
+        console.error('Screenshot failed:', error)
+        ui.notice(ui.text.photoFailed)
+      }
+    )
   }
 
   // Return a camera pipeline module that adds scene elements on start.
@@ -427,6 +473,18 @@ export const initScenePipelineModule = () => {
     // onStart is called once when the camera feed begins.
     onStart: ({canvas}) => {
       const {scene, camera, renderer} = XR8.Threejs.xrScene()  // Get the 3js scene.
+
+      // The screenshot module has to be added in app.js; without it there is no photo button.
+      const canTakePhoto = !!(XR8.CanvasScreenshot && XR8.CanvasScreenshot.takeScreenshot)
+      ui = createUi({
+        onToggleMute: () => {
+          setMuted(!isMuted())
+          resumeAudio()  // a button press is a valid gesture to unlock audio
+          return isMuted()
+        },
+        onPhoto: canTakePhoto ? takePhoto : null,
+      })
+      ui.setLoading(0, items.length)
 
       initXrScene({scene, camera, renderer})  // Add objects and set the starting camera.
 
@@ -439,6 +497,10 @@ export const initScenePipelineModule = () => {
       XR8.XrController.updateCameraProjectionMatrix(
         {origin: camera.position, facing: camera.quaternion}
       )
+
+      // iOS only lets audio start on touchend/click (not touchstart). Sounds are already
+      // scheduled by then; this releases them.
+      canvas.addEventListener('touchend', resumeAudio)
 
       // Tap a character to make it react; tap empty space to recenter content instead.
       canvas.addEventListener(
