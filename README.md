@@ -17,10 +17,19 @@ shows a QR code, because the camera tracking needs a phone).
 - A **photo button** (camera feed plus creatures, ready to share), a **mute button**, and a
   first-tap hint. The sound effects are synthesized in the browser, so there are no audio files.
 - A **level mode** (the button at the top left): a small diorama of a level from the game,
-  "Light the way". Steer the acorn with the on-screen buttons (or the arrow keys and space bar
-  on a computer). Tap the Glowcap to switch its light on: the glowing "bloom" platforms bridging
-  the gap only exist, and are only solid, while it shines on them. Reach the green sphere to
-  finish. Switch the light off while standing on a platform and it lets you fall.
+  "Light the way", which is a puzzle for the two of them.
+  - You steer the **acorn** with the on-screen buttons (or the arrow keys and space bar on a
+    computer). The **Glowcap** is slow and cannot jump far; you send it somewhere by tapping the
+    ground there, and tapping the Glowcap itself calls it to the acorn. It stops at ledges.
+  - The Glowcap always glows, and the "bloom" platforms bridging the gap are solid only while it
+    is close enough to light them, so the acorn can cross only if the Glowcap is standing near
+    the bridge. Take it away and the bridge lets the acorn fall. The row of glowing platforms
+    over the start slab works the same way: jump up onto it, and it drops you when the light
+    moves off. You can stand on these platforms, but walk through their sides.
+  - The Glowcap cannot follow over the gap. At the far side is a glowing anchor: stand next to it
+    and press the button to grow a branch back across the gap, which the Glowcap can walk over.
+    The branch holds only while the acorn stays near the anchor.
+  - The level is won when the **Glowcap** reaches the green sphere; it then starts over.
 
 ## Run it locally
 
@@ -44,12 +53,13 @@ Pushing to `main` builds the site and publishes it to GitHub Pages
 - `src/threejs-scene-init.js` — the three.js scene: loading the models, lighting, the two modes,
   and how each creature reacts to a tap. The list of creatures and their behaviour is the `items`
   array at the top.
-- `src/level.js` — the level diorama: builds the platforms, the acorn and the Glowcap, and scrolls
-  a window over the level. `src/level-data.js` holds the level itself (copied from the game's
-  `light_the_way.tscn`).
+- `src/level.js` — the level diorama: builds the platforms, the acorn, the Glowcap and the branch,
+  and scrolls a window over the level. `src/level-data.js` holds the level itself (taken from the
+  game's `light_the_way.tscn`).
 - `src/platformer.js` — the platformer physics, with no three.js in it. It uses the numbers from the
-  game's player script (gravity, jump, speed, coyote time) so the acorn feels the same.
-  `npm test` checks it against the level's rules.
+  game's scripts (gravity, jump, speed, coyote time; the Glowcap's slow walk and 0.3 hop) so the
+  characters feel the same. `src/branch.js` is the branch's curve and the slope that is walked on.
+  `npm test` checks all of it against the level's rules.
 - `src/rig.js`, `src/glow.js` — helpers shared by both modes: placing rigged characters, and the glow.
 - `src/ui.js`, `src/index.css` — loading note, hints, mode switch, the level's buttons, mute and photo.
 - `src/sound.js` — the synthesized sound effects.

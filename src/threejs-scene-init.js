@@ -308,6 +308,8 @@ export const initScenePipelineModule = () => {
       onEvent: (name) => {
         if (name === 'won') {
           ui.notice(ui.text.won, 3500)
+        } else if (name === 'branchLost') {
+          ui.notice(ui.text.branchLost, 3000)
         }
       },
     })
@@ -399,6 +401,7 @@ export const initScenePipelineModule = () => {
     if (!inLevel) {
       showingLevelLoading = false
       ui.hideNotice()
+      ui.setAction(null)
     }
     level.setActive(inLevel)
     ui.setMode(next)
@@ -438,6 +441,7 @@ export const initScenePipelineModule = () => {
         },
         onPhoto: canTakePhoto ? takePhoto : null,
         onToggleMode: () => setMode(mode === 'creatures' ? 'level' : 'creatures'),
+        onAction: () => level.pressAction(),
         onGesture: resumeAudio,
       })
       ui.setLoading(0, items.length)
@@ -458,8 +462,9 @@ export const initScenePipelineModule = () => {
       // scheduled by then; this releases them.
       canvas.addEventListener('touchend', resumeAudio)
 
-      // Tap a character to make it react (in the level: tap the Glowcap to switch its
-      // light); tap empty space to recenter content instead.
+      // Tap a character to make it react (in the level: tap the ground to send the Glowcap
+      // there, or the Glowcap to call it to the acorn); tap empty space to recenter content
+      // instead.
       canvas.addEventListener(
         'touchstart', (e) => {
           if (e.touches.length !== 1) {
@@ -467,7 +472,7 @@ export const initScenePipelineModule = () => {
           }
           aimRaycaster(e.touches[0], canvas, camera)
           if (mode === 'level') {
-            if (level.tapGlowcap(raycaster)) {
+            if (level.tap(raycaster)) {
               ui.hideHint()
             } else {
               XR8.XrController.recenter()
@@ -497,6 +502,7 @@ export const initScenePipelineModule = () => {
           ui.hideNotice()
         }
         level.update(dt, t, ui.getInput())
+        ui.setAction(level.action())   // the anchor's button shows only while the acorn stands at it
         return
       }
 

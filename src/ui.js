@@ -7,10 +7,13 @@ const TEXT = {
   loading: (done, total) => `Завантажую істот… ${done}/${total}`,
   loadingLevel: 'Завантажую рівень…',
   hintCreatures: 'Торкнись істоти — вона зреагує',
-  hintLevel: 'Торкнись Glowcap, щоб засвітити плити, і перебіжи на той бік',
+  hintLevel: 'Торкнись землі — Glowcap піде туди. Його світло будує міст',
   modeToLevel: '🎮 Рівень',
   modeToCreatures: '🌰 Істоти',
-  won: 'Рівень пройдено! ✨',
+  actionGrow: '🌿 Виростити гілку',
+  actionRemove: '🍂 Прибрати гілку',
+  won: 'Glowcap дійшов до виходу! ✨',
+  branchLost: 'Гілка зникла: жолудь відійшов надто далеко',
   left: 'Вліво',
   right: 'Вправо',
   jump: 'Стрибок',
@@ -27,9 +30,10 @@ const make = (tag, className, props) => Object.assign(document.createElement(tag
 
 // `onToggleMute()` flips the sound and returns whether it is now muted. `onPhoto` takes a
 // photo; pass null when the engine cannot (then no photo button is shown). `onToggleMode()`
-// switches between the creature showcase and the level. `onGesture()` is called on button
-// presses so the caller can unlock audio (iOS only allows that from a real touch/click).
-export const createUi = ({onToggleMute, onPhoto, onToggleMode, onGesture = () => {}}) => {
+// switches between the creature showcase and the level. `onAction()` is the level's context
+// button (grow / remove the branch). `onGesture()` is called on button presses so the caller
+// can unlock audio (iOS only allows that from a real touch/click).
+export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => {}, onGesture = () => {}}) => {
   const root = make('div', 'ui')
   const loading = make('div', 'ui-toast ui-loading')
   const notice = make('div', 'ui-toast ui-notice')
@@ -38,7 +42,9 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onGesture = () =>
   mute.setAttribute('aria-label', TEXT.mute)
   const mode = make('button', 'ui-mode', {type: 'button', textContent: TEXT.modeToLevel})
   const flash = make('div', 'ui-flash')
-  root.append(loading, notice, hint, mute, mode, flash)
+  // A button that only shows when there is something to do right here (in the level: at the anchor).
+  const action = make('button', 'ui-action', {type: 'button'})
+  root.append(loading, notice, hint, mute, mode, action, flash)
 
   if (onPhoto) {
     const shutter = make('button', 'ui-shutter', {type: 'button'})
@@ -120,6 +126,11 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onGesture = () =>
     onToggleMode()
   })
 
+  action.addEventListener('click', () => {
+    onGesture()
+    onAction()
+  })
+
   close.addEventListener('click', () => setVisible(sheet, false))
 
   // Opens the phone's share sheet (which has "Save Image"). Where that is not available,
@@ -156,6 +167,15 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onGesture = () =>
     hideNotice() {
       clearTimeout(noticeTimer)
       setVisible(notice, false)
+    },
+    // Shows the context button ('grow' or 'remove') or hides it (null).
+    setAction(kind) {
+      if (kind === null) {
+        setVisible(action, false)
+        return
+      }
+      action.textContent = kind === 'remove' ? TEXT.actionRemove : TEXT.actionGrow
+      setVisible(action, true)
     },
     // Shows the controls that belong to a mode ('creatures' or 'level') and points the mode
     // button at the other one.
