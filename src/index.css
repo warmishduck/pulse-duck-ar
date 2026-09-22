@@ -75,6 +75,15 @@ body {
   right: 12px;
 }
 
+/* The EN/UK switch, just to the left of the mute button. */
+.ui-lang {
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: 64px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 /* The pill that switches between the creature showcase and the level. */
 .ui-mode {
   position: absolute;

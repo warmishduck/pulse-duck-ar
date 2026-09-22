@@ -1,30 +1,88 @@
 // The demo's on-screen extras, drawn as plain DOM on top of the AR canvas: a loading note, a
-// hint, a mode switch, the level's move/jump buttons, a mute button, and a photo button with
-// a preview sheet. Styles are in index.css (the `.ui-*` rules). All user-facing text lives in
-// TEXT so it is easy to change.
+// hint, a mode switch, the level's move/jump buttons, a mute button, a language switch, and a
+// photo button with a preview sheet. Styles are in index.css (the `.ui-*` rules). All
+// user-facing text lives in STRINGS (one object per language) so it is easy to change or add to.
 
-const TEXT = {
-  loading: (done, total) => `Завантажую істот… ${done}/${total}`,
-  loadingLevel: 'Завантажую рівень…',
-  hintCreatures: 'Торкнись істоти — вона зреагує',
-  hintLevel: 'Торкнись землі — Glowcap піде туди. Його світло будує міст',
-  modeToLevel: '🎮 Рівень',
-  modeToCreatures: '🌰 Істоти',
-  actionGrow: '🌿 Виростити гілку',
-  actionRemove: '🍂 Прибрати гілку',
-  won: 'Glowcap дійшов до виходу! ✨',
-  branchLost: 'Гілка зникла: жолудь відійшов надто далеко',
-  left: 'Вліво',
-  right: 'Вправо',
-  jump: 'Стрибок',
-  mute: 'Вимкнути звук',
-  unmute: 'Увімкнути звук',
-  photo: 'Зробити фото',
-  share: 'Поділитися',
-  close: 'Закрити',
-  saveHelp: 'Затисни фото, щоб зберегти його',
-  photoFailed: 'Не вдалося зробити фото',
+const STRINGS = {
+  uk: {
+    loading: (done, total) => `Завантажую істот… ${done}/${total}`,
+    loadingLevel: 'Завантажую рівень…',
+    hintCreatures: 'Торкнись істоти — вона зреагує',
+    hintLevel: 'Торкнись землі — Glowcap піде туди. Його світло будує міст',
+    modeToLevel: '🎮 Рівень',
+    modeToCreatures: '🌰 Істоти',
+    actionGrow: '🌿 Виростити гілку',
+    actionRemove: '🍂 Прибрати гілку',
+    won: 'Glowcap дійшов до виходу! ✨',
+    branchLost: 'Гілка зникла: жолудь відійшов надто далеко',
+    left: 'Вліво',
+    right: 'Вправо',
+    jump: 'Стрибок',
+    mute: 'Вимкнути звук',
+    unmute: 'Увімкнути звук',
+    photo: 'Зробити фото',
+    share: 'Поділитися',
+    close: 'Закрити',
+    saveHelp: 'Затисни фото, щоб зберегти його',
+    photoFailed: 'Не вдалося зробити фото',
+    language: 'Мова',
+    title: 'Лісові істоти · AR',
+  },
+  en: {
+    loading: (done, total) => `Loading creatures… ${done}/${total}`,
+    loadingLevel: 'Loading the level…',
+    hintCreatures: 'Tap a creature — it reacts',
+    hintLevel: 'Tap the ground — the Glowcap walks there. Its light builds the bridge',
+    modeToLevel: '🎮 Level',
+    modeToCreatures: '🌰 Creatures',
+    actionGrow: '🌿 Grow a branch',
+    actionRemove: '🍂 Remove the branch',
+    won: 'The Glowcap reached the exit! ✨',
+    branchLost: 'The branch is gone: the acorn wandered too far',
+    left: 'Left',
+    right: 'Right',
+    jump: 'Jump',
+    mute: 'Mute sound',
+    unmute: 'Unmute sound',
+    photo: 'Take a photo',
+    share: 'Share',
+    close: 'Close',
+    saveHelp: 'Press and hold the photo to save it',
+    photoFailed: 'Could not take a photo',
+    language: 'Language',
+    title: 'Forest Creatures · AR',
+  },
 }
+
+const LANG_KEY = 'lumina-ar-lang'
+
+// Starts from whatever was picked last time; otherwise from the browser's own language (so the
+// user's own phone opens in Ukrainian and, say, a boss's English phone opens in English without
+// either of them having to choose). Falls back to English, the more widely understood default.
+const detectLang = () => {
+  try {
+    const saved = localStorage.getItem(LANG_KEY)
+    if (saved === 'uk' || saved === 'en') {
+      return saved
+    }
+  } catch (e) {
+    // Storage blocked (private mode, restricted embed): fall through to the browser's language.
+  }
+  return (navigator.language || '').toLowerCase().startsWith('uk') ? 'uk' : 'en'
+}
+
+const saveLang = (lang) => {
+  try {
+    localStorage.setItem(LANG_KEY, lang)
+  } catch (e) {
+    // Not persisted this time; the toggle still works for the rest of the visit.
+  }
+}
+
+// The strings for whatever language is current. Its identity never changes (callers keep a
+// reference, e.g. `ui.text.won`), only its contents do, so a language switch updates every
+// string in place without the caller having to re-fetch anything.
+const TEXT = {}
 
 const make = (tag, className, props) => Object.assign(document.createElement(tag), {className}, props)
 
@@ -34,20 +92,24 @@ const make = (tag, className, props) => Object.assign(document.createElement(tag
 // button (grow / remove the branch). `onGesture()` is called on button presses so the caller
 // can unlock audio (iOS only allows that from a real touch/click).
 export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => {}, onGesture = () => {}}) => {
+  let lang = detectLang()
+  Object.assign(TEXT, STRINGS[lang])
+
   const root = make('div', 'ui')
   const loading = make('div', 'ui-toast ui-loading')
   const notice = make('div', 'ui-toast ui-notice')
   const hint = make('div', 'ui-toast ui-hint', {textContent: TEXT.hintCreatures})
   const mute = make('button', 'ui-button ui-mute', {type: 'button', textContent: '🔊'})
   mute.setAttribute('aria-label', TEXT.mute)
+  const langButton = make('button', 'ui-button ui-lang', {type: 'button'})
   const mode = make('button', 'ui-mode', {type: 'button', textContent: TEXT.modeToLevel})
   const flash = make('div', 'ui-flash')
   // A button that only shows when there is something to do right here (in the level: at the anchor).
   const action = make('button', 'ui-action', {type: 'button'})
-  root.append(loading, notice, hint, mute, mode, action, flash)
+  root.append(loading, notice, hint, mute, langButton, mode, action, flash)
 
-  if (onPhoto) {
-    const shutter = make('button', 'ui-shutter', {type: 'button'})
+  const shutter = onPhoto ? make('button', 'ui-shutter', {type: 'button'}) : null
+  if (shutter) {
     shutter.setAttribute('aria-label', TEXT.photo)
     shutter.addEventListener('click', onPhoto)
     root.append(shutter)
@@ -115,10 +177,53 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
 
   const setVisible = (node, visible) => node.classList.toggle('is-visible', visible)
 
+  // Tracked so a language switch can redraw whatever is currently on screen without disturbing
+  // it otherwise (state that came from outside, like the loading count or the mute icon, isn't
+  // ui.js's own to recompute).
+  let muted = false
+  let currentMode = 'creatures'
+  let currentActionKind = null
+  let lastLoading = null
+
+  // Redraws every piece of static text in the current language. Called once at start and again
+  // whenever the language toggle is pressed; `ui.text.*` itself is the same object throughout
+  // (see TEXT above), so a notice already on screen or about to be shown picks up the switch too.
+  const refreshTexts = () => {
+    document.documentElement.lang = lang
+    document.title = TEXT.title
+    langButton.textContent = lang === 'uk' ? 'EN' : 'UA'
+    langButton.setAttribute('aria-label', TEXT.language)
+    mute.setAttribute('aria-label', muted ? TEXT.unmute : TEXT.mute)
+    if (shutter) {
+      shutter.setAttribute('aria-label', TEXT.photo)
+    }
+    leftButton.setAttribute('aria-label', TEXT.left)
+    rightButton.setAttribute('aria-label', TEXT.right)
+    jumpButton.setAttribute('aria-label', TEXT.jump)
+    share.textContent = TEXT.share
+    close.textContent = TEXT.close
+    mode.textContent = currentMode === 'level' ? TEXT.modeToCreatures : TEXT.modeToLevel
+    hint.textContent = currentMode === 'level' ? TEXT.hintLevel : TEXT.hintCreatures
+    if (currentActionKind !== null) {
+      action.textContent = currentActionKind === 'remove' ? TEXT.actionRemove : TEXT.actionGrow
+    }
+    if (lastLoading) {
+      loading.textContent = TEXT.loading(lastLoading.done, lastLoading.total)
+    }
+  }
+
   mute.addEventListener('click', () => {
-    const muted = onToggleMute()
+    muted = onToggleMute()
     mute.textContent = muted ? '🔇' : '🔊'
     mute.setAttribute('aria-label', muted ? TEXT.unmute : TEXT.mute)
+  })
+
+  langButton.addEventListener('click', () => {
+    onGesture()
+    lang = lang === 'uk' ? 'en' : 'uk'
+    saveLang(lang)
+    Object.assign(TEXT, STRINGS[lang])
+    refreshTexts()
   })
 
   mode.addEventListener('click', () => {
@@ -149,9 +254,12 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
     }
   })
 
+  refreshTexts()   // the language may have been detected/restored, so draw it before anything shows
+
   let noticeTimer = null
   return {
     setLoading(done, total) {
+      lastLoading = {done, total}
       loading.textContent = TEXT.loading(done, total)
       setVisible(loading, done < total)
     },
@@ -170,6 +278,7 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
     },
     // Shows the context button ('grow' or 'remove') or hides it (null).
     setAction(kind) {
+      currentActionKind = kind
       if (kind === null) {
         setVisible(action, false)
         return
@@ -180,6 +289,7 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
     // Shows the controls that belong to a mode ('creatures' or 'level') and points the mode
     // button at the other one.
     setMode(name) {
+      currentMode = name
       const inLevel = name === 'level'
       setVisible(controls, inLevel)
       mode.textContent = inLevel ? TEXT.modeToCreatures : TEXT.modeToLevel
