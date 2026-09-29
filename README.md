@@ -92,11 +92,28 @@ Pushing to `main` builds the site and publishes it to GitHub Pages
 - `src/sound.js` — the synthesized sound effects.
 - `src/assets/` — the `.glb` models. Keep them small: they are downloaded by every visitor.
 
-## Notes
+## Self-hosted engine
 
-- Camera tracking comes from the 8th Wall engine binary, loaded from jsDelivr and pinned to
-  `1.0.0` in `index.html`. The hosted 8th Wall platform has been shut down; the engine
-  continues at [8thwall.org](https://8thwall.org), including the
-  [terms for the distributed binary](https://8thwall.org/docs/migration/faq#distributed-engine-binary-license-and-permitted-use).
+Camera tracking (world tracking / SLAM, not image targets) comes from the 8th Wall
+**Distributed Engine Binary**. The hosted 8th Wall platform has been shut down; the engine itself
+continues at [8thwall.org](https://8thwall.org). This project vendors it — the files live in
+`public/external/xr/` and are served from this site, not from a CDN — so the site has **no
+third-party dependency at runtime** (important for a museum with patchy Wi-Fi: once the ~8 MB
+engine is cached, it stays working).
+
+- `xr.js`, `xr-slam.js` (its SLAM chunk, fetched lazily — `xr-face.js` and the face/segmentation
+  `resources/` this project doesn't use were left out), `xrextras.js`, `landing-page.js`, and
+  `resources/` (the fonts/icons/images `xrextras` and `landing-page` draw their UI from — the
+  loading screen, the "open on your phone" QR fallback for desktop, etc). All from npm package
+  version `1.0.0` of `@8thwall/engine-binary`, `@8thwall/xrextras`, `@8thwall/landing-page`.
+- **Licence terms** (from the [distributed binary FAQ](https://8thwall.org/docs/migration/faq#distributed-engine-binary-license-and-permitted-use)):
+  running/hosting it yourself and distributing it as part of this project is explicitly permitted;
+  modifying, reverse-engineering, decompiling or redistributing an altered copy is not; Niantic
+  Spatial's copyright notice must stay in the file, and this project must identify Niantic Spatial
+  as the engine's creator and reference the licence — this section is that reference. **Never edit
+  the files under `public/external/xr/`.** To update the engine, download a fresh copy of the same
+  files from `https://cdn.jsdelivr.net/npm/@8thwall/<package>@<version>/dist/...` (or
+  `https://data.jsdelivr.com/v1/packages/npm/@8thwall/<package>@<version>` lists a package's exact
+  files) and replace them whole; `.gitattributes` keeps git from rewriting their line endings.
 - Started from 8th Wall's "three.js: World Effects" example.
 - The creature models come from the author's own game project.

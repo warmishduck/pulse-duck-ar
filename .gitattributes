@@ -1,0 +1,6 @@
+# The vendored 8th Wall engine binary (public/external/xr/, including its resources/ folder of
+# fonts/icons/images) must stay byte-for-byte the files Niantic Spatial distributes — the licence
+# forbids modifying them, and that includes an accidental line-ending rewrite of the text-ish ones
+# (.js, .svg). `-text` stops git normalising line endings for anything under here on checkout/
+# commit, regardless of core.autocrlf (this repo has it on). See README.md's "Self-hosted engine".
+public/external/xr/** -text
