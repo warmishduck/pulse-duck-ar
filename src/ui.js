@@ -1,88 +1,8 @@
-// The demo's on-screen extras, drawn as plain DOM on top of the AR canvas: a loading note, a
-// hint, a mode switch, the level's move/jump buttons, a mute button, a language switch, and a
-// photo button with a preview sheet. Styles are in index.css (the `.ui-*` rules). All
-// user-facing text lives in STRINGS (one object per language) so it is easy to change or add to.
-
-const STRINGS = {
-  uk: {
-    loading: (done, total) => `Завантажую істот… ${done}/${total}`,
-    loadingLevel: 'Завантажую рівень…',
-    hintCreatures: 'Торкнись істоти — вона зреагує',
-    hintLevel: 'Торкнись землі — Glowcap піде туди. Його світло будує міст',
-    modeToLevel: '🎮 Рівень',
-    modeToCreatures: '🌰 Істоти',
-    actionGrow: '🌿 Виростити гілку',
-    actionRemove: '🍂 Прибрати гілку',
-    won: 'Glowcap дійшов до виходу! ✨',
-    branchLost: 'Гілка зникла: жолудь відійшов надто далеко',
-    left: 'Вліво',
-    right: 'Вправо',
-    jump: 'Стрибок',
-    mute: 'Вимкнути звук',
-    unmute: 'Увімкнути звук',
-    photo: 'Зробити фото',
-    share: 'Поділитися',
-    close: 'Закрити',
-    saveHelp: 'Затисни фото, щоб зберегти його',
-    photoFailed: 'Не вдалося зробити фото',
-    language: 'Мова',
-    title: 'Лісові істоти · AR',
-  },
-  en: {
-    loading: (done, total) => `Loading creatures… ${done}/${total}`,
-    loadingLevel: 'Loading the level…',
-    hintCreatures: 'Tap a creature — it reacts',
-    hintLevel: 'Tap the ground — the Glowcap walks there. Its light builds the bridge',
-    modeToLevel: '🎮 Level',
-    modeToCreatures: '🌰 Creatures',
-    actionGrow: '🌿 Grow a branch',
-    actionRemove: '🍂 Remove the branch',
-    won: 'The Glowcap reached the exit! ✨',
-    branchLost: 'The branch is gone: the acorn wandered too far',
-    left: 'Left',
-    right: 'Right',
-    jump: 'Jump',
-    mute: 'Mute sound',
-    unmute: 'Unmute sound',
-    photo: 'Take a photo',
-    share: 'Share',
-    close: 'Close',
-    saveHelp: 'Press and hold the photo to save it',
-    photoFailed: 'Could not take a photo',
-    language: 'Language',
-    title: 'Forest Creatures · AR',
-  },
-}
-
-const LANG_KEY = 'lumina-ar-lang'
-
-// Starts from whatever was picked last time; otherwise from the browser's own language (so the
-// user's own phone opens in Ukrainian and, say, a boss's English phone opens in English without
-// either of them having to choose). Falls back to English, the more widely understood default.
-const detectLang = () => {
-  try {
-    const saved = localStorage.getItem(LANG_KEY)
-    if (saved === 'uk' || saved === 'en') {
-      return saved
-    }
-  } catch (e) {
-    // Storage blocked (private mode, restricted embed): fall through to the browser's language.
-  }
-  return (navigator.language || '').toLowerCase().startsWith('uk') ? 'uk' : 'en'
-}
-
-const saveLang = (lang) => {
-  try {
-    localStorage.setItem(LANG_KEY, lang)
-  } catch (e) {
-    // Not persisted this time; the toggle still works for the rest of the visit.
-  }
-}
-
-// The strings for whatever language is current. Its identity never changes (callers keep a
-// reference, e.g. `ui.text.won`), only its contents do, so a language switch updates every
-// string in place without the caller having to re-fetch anything.
-const TEXT = {}
+// The demo's on-screen extras for the AR view, drawn as plain DOM on top of the AR canvas: a
+// loading note, a hint, a mode switch, the level's move/jump buttons, a mute button, a language
+// switch, and a photo button with a preview sheet. Styles are in index.css (the `.ui-*` rules).
+// The text comes from i18n.js.
+import {LANG_LABELS, nextLang, onLangChange, setLang, TEXT} from './i18n'
 
 const make = (tag, className, props) => Object.assign(document.createElement(tag), {className}, props)
 
@@ -90,11 +10,11 @@ const make = (tag, className, props) => Object.assign(document.createElement(tag
 // photo; pass null when the engine cannot (then no photo button is shown). `onToggleMode()`
 // switches between the creature showcase and the level. `onAction()` is the level's context
 // button (grow / remove the branch). `onGesture()` is called on button presses so the caller
-// can unlock audio (iOS only allows that from a real touch/click).
-export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => {}, onGesture = () => {}}) => {
-  let lang = detectLang()
-  Object.assign(TEXT, STRINGS[lang])
-
+// can unlock audio (iOS only allows that from a real touch/click). `showModeButton` is false for
+// an exhibit that has only one of the two modes, so there is nothing to switch to.
+export const createUi = ({
+  onToggleMute, onPhoto, onToggleMode, onAction = () => {}, onGesture = () => {}, showModeButton = true,
+}) => {
   const root = make('div', 'ui')
   const loading = make('div', 'ui-toast ui-loading')
   const notice = make('div', 'ui-toast ui-notice')
@@ -103,6 +23,7 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
   mute.setAttribute('aria-label', TEXT.mute)
   const langButton = make('button', 'ui-button ui-lang', {type: 'button'})
   const mode = make('button', 'ui-mode', {type: 'button', textContent: TEXT.modeToLevel})
+  mode.hidden = !showModeButton
   const flash = make('div', 'ui-flash')
   // A button that only shows when there is something to do right here (in the level: at the anchor).
   const action = make('button', 'ui-action', {type: 'button'})
@@ -186,12 +107,10 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
   let lastLoading = null
 
   // Redraws every piece of static text in the current language. Called once at start and again
-  // whenever the language toggle is pressed; `ui.text.*` itself is the same object throughout
-  // (see TEXT above), so a notice already on screen or about to be shown picks up the switch too.
+  // whenever the language changes; `ui.text.*` itself is the same object throughout (see TEXT in
+  // i18n.js), so a notice about to be shown picks up the switch too.
   const refreshTexts = () => {
-    document.documentElement.lang = lang
-    document.title = TEXT.title
-    langButton.textContent = lang === 'uk' ? 'EN' : 'UA'
+    langButton.textContent = LANG_LABELS[nextLang()]
     langButton.setAttribute('aria-label', TEXT.language)
     mute.setAttribute('aria-label', muted ? TEXT.unmute : TEXT.mute)
     if (shutter) {
@@ -220,11 +139,9 @@ export const createUi = ({onToggleMute, onPhoto, onToggleMode, onAction = () => 
 
   langButton.addEventListener('click', () => {
     onGesture()
-    lang = lang === 'uk' ? 'en' : 'uk'
-    saveLang(lang)
-    Object.assign(TEXT, STRINGS[lang])
-    refreshTexts()
+    setLang(nextLang())
   })
+  onLangChange(refreshTexts)
 
   mode.addEventListener('click', () => {
     onGesture()

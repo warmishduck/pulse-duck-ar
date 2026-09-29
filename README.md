@@ -31,6 +31,28 @@ shows a QR code, because the camera tracking needs a phone).
     The branch holds only while the acorn stays near the anchor.
   - The level is won when the **Glowcap** reaches the green sphere; it then starts over.
 
+## Exhibits and QR codes
+
+The page shows different content depending on its address, so one site serves every QR code:
+
+- `/?c=03` opens the AR view of exhibit `03`: the creatures that stand there, and a mini-game if it has one.
+- `/` (no code, or a code that isn't recognised) opens the **welcome page**: no camera, just a 3D
+  preview of the creatures standing together, and a line telling the visitor to scan the QR code
+  next to an exhibit.
+- `/?c=demo` is the whole demo (all the creatures and the game), for showing people.
+
+What each code shows is set in `src/content/`, not in code, so adding an exhibit copies nothing:
+
+- `creatures.js` — the kinds of creature: which model, how tall, how it reacts to a tap.
+- `exhibits.js` — one entry per code: which creatures stand there (and where), and which game, if any.
+  `startIn: 'game'` opens straight into the game (the yard game has no creatures).
+
+To add a creature, put its `.glb` in `src/assets/` and add an entry to `creatures.js`; to add an exhibit,
+add an entry to `exhibits.js`. Only the models of the exhibit being viewed are downloaded. A QR code only
+holds the code (`https://<site>/?c=03`), so what stands at an exhibit can be changed without reprinting.
+`01`, `02`, `03`, `demo` and `yard` are stand-ins for trying this out with the three creatures that exist.
+`npm test` checks the config (every creature has its model, every exhibit is complete, the address parsing).
+
 ## Run it locally
 
 ```
@@ -49,10 +71,14 @@ Pushing to `main` builds the site and publishes it to GitHub Pages
 
 ## How it's put together
 
-- `src/app.js` — starts the 8th Wall camera pipeline.
-- `src/threejs-scene-init.js` — the three.js scene: loading the models, lighting, the two modes,
-  and how each creature reacts to a tap. The list of creatures and their behaviour is the `items`
-  array at the top.
+- `src/app.js` — the entry point: reads the address (`src/route.js`), then starts either the welcome
+  page (`src/welcome.js`) or the 8th Wall camera pipeline for that exhibit.
+- `src/threejs-scene-init.js` — the AR scene for one exhibit: the two modes (creatures / game), taps,
+  the photo button.
+- `src/showcase.js` — loads and animates a set of creatures and makes them react to taps; used by
+  both the AR scene and the welcome page. `src/lights.js` is the lighting they share.
+- `src/content/` — the creatures and the exhibits (see above). `src/models.js` finds model files by name.
+- `src/i18n.js` — the languages and the language switch's state; all on-screen text lives here.
 - `src/level.js` — the level diorama: builds the platforms, the acorn, the Glowcap and the branch,
   and scrolls a window over the level. `src/level-data.js` holds the level itself (taken from the
   game's `light_the_way.tscn`).
@@ -61,7 +87,8 @@ Pushing to `main` builds the site and publishes it to GitHub Pages
   characters feel the same. `src/branch.js` is the branch's curve and the slope that is walked on.
   `npm test` checks all of it against the level's rules.
 - `src/rig.js`, `src/glow.js` — helpers shared by both modes: placing rigged characters, and the glow.
-- `src/ui.js`, `src/index.css` — loading note, hints, mode switch, the level's buttons, mute and photo.
+- `src/ui.js`, `src/index.css` — the AR view's loading note, hints, mode switch, the level's buttons,
+  mute, language switch and photo.
 - `src/sound.js` — the synthesized sound effects.
 - `src/assets/` — the `.glb` models. Keep them small: they are downloaded by every visitor.
 

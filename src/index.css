@@ -6,6 +6,48 @@ body {
   padding: 0;
 }
 
+/* ---- The welcome page: no camera, just a 3D preview and some words (src/welcome.js) ---- */
+
+body.welcome-page {
+  background: radial-gradient(ellipse at 50% 30%, #3a5a45 0%, #1f302a 55%, #131d1a 100%) fixed;
+}
+.welcome-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+/* There is no mute button here, so the language switch takes its corner. */
+.welcome-ui .ui-lang {
+  right: 12px;
+}
+.welcome-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 28px);
+  padding: 0 24px;
+  text-align: center;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6);
+}
+.welcome-card h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  font-weight: 700;
+}
+.welcome-card p {
+  margin: 0 auto;
+  max-width: 30em;
+  font-size: 17px;
+  line-height: 1.4;
+}
+.welcome-card .welcome-note {
+  margin-top: 12px;
+  color: #ffd28a;
+}
+
 /* ---- On-screen extras (built in src/ui.js) ---- */
 
 .ui {
