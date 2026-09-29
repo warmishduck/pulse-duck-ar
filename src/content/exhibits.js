@@ -6,14 +6,21 @@
 //   creatures  who stands there: [{id: 'acorn', x, z, yaw, ...}]. `id` is a key of CREATURES;
 //              x/z are where it stands on the floor in front of the phone (default 0 / -0.2);
 //              any other field overrides that creature's own setting for this exhibit
-//   game       the mini-game to offer (or start in), if any. Only 'light_the_way' exists so far
+//   game       the id of the mini-game to offer (or start in), if any — a key of GAMES in
+//              content/games.js, which is where the id turns into what actually plays
 //   startIn    'game' opens straight into the game, with no creature showcase first
 // Codes are lower case letters, digits and dashes.
 //
 // NOTE: 01-03, demo and yard are stand-ins to try the flow with the three creatures that exist
 // so far. They get replaced by the museum's real exhibits and creatures.
 
+import {CREATURES} from './creatures.js'
+
 const at = (id, x = 0, z = -0.2, extra = {}) => ({id, x, z, ...extra})
+
+// A creature shown on its own (most real exhibits, one QR each), 3x its usual size: without the
+// others next to it for scale it read as small and far away.
+const alone = (id, extra = {}) => at(id, 0, -0.2, {targetHeight: CREATURES[id].targetHeight * 3, ...extra})
 
 // The three creatures standing together, as the demo page has always shown them.
 const TOGETHER = [
@@ -23,9 +30,9 @@ const TOGETHER = [
 ]
 
 export const EXHIBITS = {
-  '01': {creatures: [at('acorn')]},
-  '02': {creatures: [at('pinecone')]},
-  '03': {creatures: [at('glowcap')], game: 'light_the_way'},
+  '01': {creatures: [alone('acorn')]},
+  '02': {creatures: [alone('pinecone')]},
+  '03': {creatures: [alone('glowcap')], game: 'light_the_way'},
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
   // The yard game, open whenever the museum is closed: no creatures, straight into the game.
@@ -35,5 +42,3 @@ export const EXHIBITS = {
 // What the welcome page shows (the page you get without a code): a preview of the creatures
 // waiting inside, all standing together.
 export const PREVIEW = TOGETHER
-
-export const GAMES = ['light_the_way']

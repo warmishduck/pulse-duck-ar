@@ -183,7 +183,13 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
           }
         }
         if (glow) {
-          glows[index] = createGlow(group, model, glowLight)
+          // The halo/light sizes in createGlow's defaults are metres, sized for this creature's
+          // own usual height; scale them the same way an exhibit scaled the creature (see
+          // content/exhibits.js's `alone`), or an enlarged glowcap would glow like a normal one.
+          const glowScale = targetHeight / CREATURES[items[index].id].targetHeight
+          glows[index] = createGlow(group, model, glowLight, {
+            haloSize: 1.3 * glowScale, haloY: 0.28 * glowScale, lightY: 0.3 * glowScale, lightDistance: 2.5 * glowScale,
+          })
           if (active) {
             glows[index].attachLight()
           }

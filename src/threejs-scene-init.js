@@ -7,6 +7,7 @@
 //    creatures.
 import * as THREE from 'three';
 
+import {GAMES} from './content/games.js'
 import {createLevel} from './level'
 import {addLights, addShadowFloor} from './lights'
 import {createShowcase} from './showcase'
@@ -17,7 +18,11 @@ export const initScenePipelineModule = (exhibit) => {
   const clock = new THREE.Clock()
 
   const hasCreatures = exhibit.creatures.length > 0
-  const hasGame = !!exhibit.game
+  // What plays, if anything (content/games.js turns an id like 'light_the_way' into the level
+  // data an actual game reads). Only one `type` exists yet ('platformer', run by level.js); a
+  // second kind of game would be started here too, picked by `game.type`, alongside this one.
+  const game = exhibit.game ? GAMES[exhibit.game] : null
+  const hasGame = !!game
 
   // The creature showcase and the level diorama, created in initXrScene (the level only when the
   // exhibit has a game); and which of the two modes is showing.
@@ -63,6 +68,7 @@ export const initScenePipelineModule = (exhibit) => {
     if (hasGame) {
       level = createLevel({
         glowLight,
+        data: game.data,
         onEvent: (name) => {
           if (name === 'won') {
             ui.notice(ui.text.won, 3500)
