@@ -95,7 +95,9 @@ export const startWelcome = ({unknownCode = false} = {}) => {
   const {glowLight} = addLights(scene, renderer)
   scene.add(makeGround())
 
-  const showcase = createShowcase({placements: PREVIEW, glowLight})
+  // Always shown awake: a locked silhouette here would invite a tap that can't do anything
+  // useful this far from the exhibit (there's no puzzle-solving on the welcome page).
+  const showcase = createShowcase({placements: PREVIEW, glowLight, puzzlesEnabled: false})
   showcase.load(scene)
 
   // Frames the creatures whatever the screen's shape: far enough back that both their width and

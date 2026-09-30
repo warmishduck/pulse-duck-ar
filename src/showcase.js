@@ -7,15 +7,21 @@ import * as THREE from 'three'
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'
 
 import {CREATURES} from './content/creatures.js'
+import {snapshotCreature} from './creature-snapshot.js'
 import {createGlow, updateGlow} from './glow'
-import {modelUrl} from './models'
+import {loadMiniGame} from './minigames/registry.js'
+import {artUrl, modelUrl} from './models'
 import {measureModel, pinRootHorizontally} from './rig'
 import {playSound} from './sound'
+import {createSparkBurst} from './spark'
 
 const BPM = 70                 // "heartbeat" rate for the idle pulse animation
 const JUMP_DURATION = 0.45     // seconds a tap-triggered hop takes, start to finish
 const JUMP_HEIGHT = 0.35       // how high a tapped character hops
 const HIT_BOX_EXTRA_HEIGHT = 0.4  // headroom above an animated character that still counts as a hit
+const SILHOUETTE_COLOR = 0x0a0d0a
+const SILHOUETTE_OPACITY = 0.55
+const UNLOCK_FALLBACK_MS = 900   // how long to hold before going idle when there's no unlockAnim
 
 // Returns a copy of `array` in random order (Fisher-Yates).
 const shuffled = (array) => {
@@ -31,8 +37,10 @@ const shuffled = (array) => {
 
 // `placements` is a list like [{id: 'acorn', x, z, ...overrides}] (see content/exhibits.js).
 // `glowLight` is the shared point light the glowcap's glow drives. `onProgress(done, total)` is
-// called as each model finishes loading (or fails to).
-export const createShowcase = ({placements, glowLight, onProgress = () => {}}) => {
+// called as each model finishes loading (or fails to). `puzzlesEnabled` is false for the welcome
+// page's preview: it always shows creatures awake, never gated behind their puzzle, since it is
+// meant to be a glimpse of what is inside, not a copy of the exhibit.
+export const createShowcase = ({placements, glowLight, onProgress = () => {}, puzzlesEnabled = true}) => {
   // Each item is a creature's own settings with this placement's overrides on top.
   const items = placements.map((placement) => ({...CREATURES[placement.id], ...placement}))
 
@@ -40,16 +48,52 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
   const groups = []
   // Elapsed timestamp when an item was last tapped, or null if not hopping.
   const jumpStart = items.map(() => null)
-  // Skeletal-animation mixers for models that ship with built-in clips (glowcap, acorn).
-  const mixers = []
+  // Skeletal-animation mixers and clip lists for models that ship with built-in clips (glowcap,
+  // acorn), indexed like `items` (not every item has one, so this isn't a flat pushed list).
+  const mixerByIndex = items.map(() => null)
+  const clipsByIndex = items.map(() => null)
   // Tap-reaction state for items with `reactions` and glow state for items with `glow`
   // (both parallel to `items`, filled in once the model has loaded).
   const reactionStates = items.map(() => null)
   const glows = items.map(() => null)
 
+  // A puzzle-gated item's state: null (no puzzle — always interactive, the old behaviour),
+  // 'locked' (a silhouette; tap opens the puzzle), 'opening' (the puzzle module is being
+  // fetched/started), 'unlocking' (materials restored, its wake animation is playing), or
+  // 'unlocked' (solved: tapping it plays its `reactions` like any other creature).
+  const lockState = items.map((item) => (item.puzzle && puzzlesEnabled ? 'locked' : null))
+  const silhouetteOriginals = items.map(() => null)   // {node, material}[] to restore on unlock
+  const activeGames = items.map(() => null)           // the running MiniGame instance, if any
+  const puzzleRoots = items.map(() => null)           // its DOM mount point, if any
+  const activeSparks = items.map(() => null)
+  const puzzleArt = items.map(() => null)             // an auto-rendered <canvas> portrait, once taken
+
   let finished = 0    // how many models have loaded (or failed to)
   let now = 0         // the time of the latest update(), which taps are stamped with
   let active = true   // false while something else (the level) has the stage
+
+  // Swaps every mesh's material for a dark, semi-transparent stand-in, keeping the originals to
+  // put back on unlock() — a locked creature is a silhouette, not the real thing.
+  const applySilhouette = (index, model) => {
+    const originals = []
+    model.traverse((node) => {
+      if (node.isMesh) {
+        originals.push({node, material: node.material})
+        node.material = new THREE.MeshBasicMaterial({
+          color: SILHOUETTE_COLOR, transparent: true, opacity: SILHOUETTE_OPACITY, depthWrite: false,
+        })
+      }
+    })
+    silhouetteOriginals[index] = originals
+  }
+  const restoreMaterials = (index) => {
+    const originals = silhouetteOriginals[index]
+    if (!originals) {
+      return
+    }
+    originals.forEach(({node, material}) => { node.material = material })
+    silhouetteOriginals[index] = null
+  }
 
   // Sets up tap reactions for an animated model: one action per reaction clip, and the way
   // back to the idle loop once a reaction has finished.
@@ -133,10 +177,11 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
     scene.add(group)
     groups[index] = group
 
-    if (reactions) {
+    if (reactions || lockState[index]) {
       // An invisible box to tap on. A moving skinned mesh is a poor hit target (its cached
       // bounds are computed once, in one pose, so a jump can leave them). Raycasting ignores
-      // `visible`, so this box still catches taps without being drawn.
+      // `visible`, so this box still catches taps without being drawn. Also what a locked
+      // creature (no `reactions` needed yet) is tapped through to open its puzzle.
       const height = targetHeight + HIT_BOX_EXTRA_HEIGHT
       const hitBox = new THREE.Mesh(new THREE.BoxGeometry(0.6, height, 0.6), new THREE.MeshBasicMaterial())
       hitBox.position.y = height / 2
@@ -173,14 +218,31 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
           }
         })
 
+        // A puzzle without its own art (content/creatures.js's `puzzle.art`) gets a real picture
+        // of this creature instead of the abstract placeholder pattern — much easier to tell
+        // apart mid-puzzle. Must happen before group.add(model): the model needs to be an orphan
+        // to render into creature-snapshot.js's own scene, and before any silhouette override
+        // below, while its materials are still its real ones.
+        if (lockState[index] && !items[index].puzzle.art) {
+          try {
+            puzzleArt[index] = snapshotCreature(model, targetHeight)
+          } catch (e) {
+            console.warn('Could not render a puzzle-art snapshot; falling back to the placeholder pattern', e)
+          }
+        }
+
         group.add(model)
 
         // Animated models come back with a mixer that is already playing their idle clip.
         if (mixer) {
-          mixers.push(mixer)
+          mixerByIndex[index] = mixer
+          clipsByIndex[index] = clips
           if (reactions) {
             setupReactions(index, mixer, mixer.clipAction(idleClip), clips, reactions)
           }
+        }
+        if (lockState[index]) {
+          applySilhouette(index, model)
         }
         if (glow) {
           // The halo/light sizes in createGlow's defaults are metres, sized for this creature's
@@ -233,6 +295,29 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
         }
       })
       glowLight.intensity = 0
+      if (!on) {
+        // Leaving the stage mid-puzzle must not leave a dangling overlay or a stuck creature:
+        // close whatever's open. Progress on an unsolved puzzle is already saved by the puzzle
+        // module itself, so this costs nothing — it reopens where they left off. A puzzle that
+        // had already been WON (mid wake-animation) is simply finished outright instead of
+        // reverting it to locked, since undoing a solve would be a strange thing to see.
+        items.forEach((item, i) => {
+          if (activeGames[i]) {
+            activeGames[i].destroy()
+            activeGames[i] = null
+          }
+          if (puzzleRoots[i]) {
+            puzzleRoots[i].remove()
+            puzzleRoots[i] = null
+          }
+          if (lockState[i] === 'opening') {
+            lockState[i] = 'locked'
+          } else if (lockState[i] === 'unlocking') {
+            restoreMaterials(i)
+            lockState[i] = 'unlocked'
+          }
+        })
+      }
     },
 
     // Returns the index of whichever creature the aimed raycaster's ray hits, or -1 if it
@@ -251,8 +336,18 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
       return groups.indexOf(node)
     },
 
-    // Makes creature `index` react in whatever way its entry describes.
+    // Makes creature `index` react in whatever way its entry describes: opens its puzzle if it's
+    // still locked, does nothing while that puzzle or its wake animation is already in progress,
+    // otherwise the ordinary hop / reaction / glow-toggle tap it always did.
     tap(index) {
+      const state = lockState[index]
+      if (state === 'locked') {
+        this.openPuzzle(index)
+        return
+      }
+      if (state === 'opening' || state === 'unlocking') {
+        return
+      }
       if (items[index].hop !== false) {
         jumpStart[index] = now
         playSound(items[index].hopSound)
@@ -264,12 +359,90 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}}) =
       }
     },
 
+    // Fetches and starts creature `index`'s puzzle as a full-screen DOM overlay. Does nothing if
+    // it isn't currently locked (a stray double-tap while one is already opening, say).
+    openPuzzle(index) {
+      if (lockState[index] !== 'locked') {
+        return
+      }
+      lockState[index] = 'opening'
+      const item = items[index]
+      const root = document.createElement('div')
+      root.className = 'puzzle-root'
+      document.body.appendChild(root)
+      puzzleRoots[index] = root
+      loadMiniGame(item.puzzle.type || 'puzzle').then((MiniGameClass) => {
+        if (lockState[index] !== 'opening') {
+          return   // the exhibit was left (setActive(false)) while this was still loading
+        }
+        const config = {...item.puzzle, art: item.puzzle.art ? artUrl(item.puzzle.art) : puzzleArt[index], creatureId: item.id}
+        const game = new MiniGameClass(root, config, () => {
+          game.destroy()
+          root.remove()
+          puzzleRoots[index] = null
+          activeGames[index] = null
+          this.unlock(index)
+        })
+        activeGames[index] = game
+        game.start()
+      }).catch((e) => {
+        // A failure this early (the module itself, or something before the mini-game's own error
+        // handling takes over) must not leave a silent empty overlay — there's no devtools on a
+        // museum floor to explain why nothing happened.
+        console.error('Failed to open the puzzle', e)
+        root.textContent = `${e && e.name || 'Error'}: ${e && e.message || e}`
+        Object.assign(root.style, {
+          color: '#fff', font: '13px monospace', padding: '20px', background: 'rgba(120,20,20,0.95)',
+        })
+      })
+    },
+
+    // Called once a puzzle is won: restores the creature's real materials, a spark burst, its
+    // wake sound, and — if it has one — its `unlockAnim` played once before settling into the
+    // ordinary idle/tap-reacts-to `reactions` state.
+    unlock(index) {
+      lockState[index] = 'unlocking'
+      restoreMaterials(index)
+      const item = items[index]
+      activeSparks[index] = createSparkBurst(groups[index], {radius: item.targetHeight * 0.6})
+      playSound('wake')
+
+      const mixer = mixerByIndex[index]
+      const clips = clipsByIndex[index]
+      const unlockClip = item.unlockAnim && clips && THREE.AnimationClip.findByName(clips, item.unlockAnim)
+      const idleAction = reactionStates[index] ? reactionStates[index].idle : null
+
+      if (!unlockClip || !mixer) {
+        if (item.unlockAnim) {
+          console.warn(`unlockAnim clip "${item.unlockAnim}" not found in the model`)
+        }
+        setTimeout(() => { lockState[index] = 'unlocked' }, UNLOCK_FALLBACK_MS)
+        return
+      }
+      const action = mixer.clipAction(unlockClip)
+      action.reset()
+      action.setLoop(THREE.LoopOnce, 1)
+      action.clampWhenFinished = true
+      action.play()
+      if (idleAction) {
+        action.crossFadeFrom(idleAction, 0.3, false)
+      }
+      const holdMs = Math.max((unlockClip.duration / (action.timeScale || 1)) * 1000, 300)
+      setTimeout(() => {
+        if (idleAction) {
+          idleAction.reset().play().crossFadeFrom(action, 0.4, false)
+        }
+        lockState[index] = 'unlocked'
+      }, holdMs)
+    },
+
     // Advances the skeletal animations, then spins, bobs and pulses each creature, adding a hop
     // on top for whichever one was just tapped. `t` is the total time in seconds.
     update(dt, t) {
       now = t
-      mixers.forEach((mixer) => mixer.update(dt))
+      mixerByIndex.forEach((mixer) => mixer && mixer.update(dt))
       glows.forEach((glow) => glow && updateGlow(glow, dt, t))
+      activeSparks.forEach((spark) => spark && spark.update(dt))
 
       groups.forEach((group, i) => {
         const {spinSpeed = 0, phase = 0, hover = 0.08, bob = 0.05} = items[i]

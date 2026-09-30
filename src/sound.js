@@ -113,6 +113,11 @@ const SOUNDS = {
     noiseBurst(0.06, 3000, 1500, 0.4, t)
     noiseBurst(0.06, 2500, 1200, 0.3, t + 0.09)
   },
+  // A puzzle solved, a creature waking up: a rising chime with a soft sparkle riding along.
+  wake: (t) => {
+    ;[392, 523, 659, 784, 1047].forEach((hz, i) => tone('sine', hz * 0.9, hz, 0.5, 0.22, t + i * 0.07))
+    noiseBurst(0.35, 1500, 4200, 0.15, t + 0.05)
+  },
 }
 
 export const playSound = (name) => {

@@ -4,7 +4,7 @@
     "serve": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --no-warnings test/platformer.test.js && node --no-warnings test/config.test.js"
+    "test": "node --no-warnings test/platformer.test.js && node --no-warnings test/config.test.js && node --no-warnings test/puzzle-logic.test.js"
   },
   "dependencies": {
     "three": "^0.183.2"
