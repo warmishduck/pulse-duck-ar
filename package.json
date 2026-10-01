@@ -7,6 +7,7 @@
     "test": "node --no-warnings test/platformer.test.js && node --no-warnings test/config.test.js && node --no-warnings test/puzzle-logic.test.js"
   },
   "dependencies": {
+    "qrcode-generator": "^2.0.4",
     "three": "^0.183.2"
   },
   "devDependencies": {

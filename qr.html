@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR codes · Sarka AR</title>
+  <style>
+    :root { --ink: #1a1f1c; --muted: #6a736d; --line: #d7ddd8; --accent: #2f7d4f; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+      color: var(--ink);
+      background: #f4f6f4;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .controls {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 12px 18px;
+      padding: 16px 20px;
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+    }
+    .controls h1 { font-size: 18px; margin: 0 12px 0 0; }
+    .controls label { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+    .controls input {
+      font: inherit;
+      font-size: 14px;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      min-width: min(70vw, 360px);
+    }
+    .controls button {
+      font: inherit;
+      font-weight: 600;
+      padding: 9px 18px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      cursor: pointer;
+    }
+    .hint { width: 100%; margin: 0; font-size: 13px; color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+      gap: 16px;
+      padding: 20px;
+    }
+    .card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 8px;
+      padding: 18px 14px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      break-inside: avoid;
+    }
+    .card .qr { width: 180px; height: 180px; }
+    .card .qr svg { width: 100%; height: 100%; display: block; }
+    .card .code { font-size: 22px; font-weight: 800; letter-spacing: 0.04em; }
+    .card .desc { font-size: 13px; color: var(--muted); min-height: 1.2em; }
+    .card .url { font-size: 11px; color: var(--muted); word-break: break-all; }
+    .card.is-special { background: #f0f5f1; }
+    .tag {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      font-weight: 700;
+    }
+    @media print {
+      body { background: #fff; }
+      .controls { display: none; }
+      .grid { padding: 0; gap: 10mm; grid-template-columns: repeat(3, 1fr); }
+      .card { border: 1px solid #bbb; }
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <h1>QR codes · Sarka AR</h1>
+    <label>Base URL
+      <input id="base" type="url" spellcheck="false" autocomplete="off">
+    </label>
+    <button id="print" type="button">Print</button>
+    <p class="hint">
+      One code per exhibit. A visitor scans it to open that exhibit (<code>&lt;base&gt;/?c=&lt;code&gt;</code>).
+      Change the base URL above if the site ever moves to a different domain, then reprint — a printed code points
+      at whatever URL it was made with, forever. <code>demo</code> / <code>yard</code> are the internal showcase and
+      the outdoor game, not an exhibit — skip them when printing for the exhibits.
+    </p>
+  </div>
+  <div class="grid" id="grid"></div>
+
+  <script type="module">
+    import qrcode from 'qrcode-generator'
+    import {EXHIBITS} from './src/content/exhibits.js'
+
+    // Where the printed codes will point. The project's live home; editable for a future domain.
+    const DEFAULT_BASE = 'https://warmishduck.github.io/pulse-duck-ar'
+    const SPECIAL = new Set(['demo', 'yard'])
+
+    const baseInput = document.getElementById('base')
+    const grid = document.getElementById('grid')
+    baseInput.value = DEFAULT_BASE
+
+    // A short human description of what's at an exhibit, so staff can match a printed code to the
+    // right spot: the creatures standing there, and whether it opens straight into a game.
+    const describe = (entry) => {
+      const creatures = entry.creatures.map((c) => c.id)
+      if (creatures.length === 0 && entry.game) {
+        return 'game only'
+      }
+      return creatures.join(', ') + (entry.game ? ' + game' : '')
+    }
+
+    const urlFor = (base, code) => `${base.replace(/\/+$/, '')}/?c=${code}`
+
+    const render = () => {
+      const base = baseInput.value.trim() || DEFAULT_BASE
+      grid.textContent = ''
+      for (const code of Object.keys(EXHIBITS)) {
+        const url = urlFor(base, code)
+        const qr = qrcode(0, 'M')   // auto size, medium error correction (survives a smudge on a wall)
+        qr.addData(url)
+        qr.make()
+
+        const card = document.createElement('div')
+        card.className = 'card' + (SPECIAL.has(code) ? ' is-special' : '')
+
+        const qrBox = document.createElement('div')
+        qrBox.className = 'qr'
+        qrBox.innerHTML = qr.createSvgTag({cellSize: 4, margin: 2, scalable: true})
+        card.appendChild(qrBox)
+
+        if (SPECIAL.has(code)) {
+          const tag = document.createElement('div')
+          tag.className = 'tag'
+          tag.textContent = 'not an exhibit'
+          card.appendChild(tag)
+        }
+        const codeEl = document.createElement('div')
+        codeEl.className = 'code'
+        codeEl.textContent = code
+        const desc = document.createElement('div')
+        desc.className = 'desc'
+        desc.textContent = describe(EXHIBITS[code])
+        const urlEl = document.createElement('div')
+        urlEl.className = 'url'
+        urlEl.textContent = url
+        card.append(codeEl, desc, urlEl)
+        grid.appendChild(card)
+      }
+    }
+
+    baseInput.addEventListener('input', render)
+    document.getElementById('print').addEventListener('click', () => window.print())
+    render()
+  </script>
+</body>
+</html>
