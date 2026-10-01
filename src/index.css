@@ -92,7 +92,7 @@ body {
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.15);
   cursor: grab;
   touch-action: none;
-  transition: left 0.22s ease, top 0.22s ease, width 0.22s ease, height 0.22s ease, box-shadow 0.2s;
+  transition: left 0.22s ease, top 0.22s ease, width 0.22s ease, height 0.22s ease, box-shadow 0.2s, transform 0.2s ease;
 }
 .puzzle-piece.is-not-animated {
   transition: none !important;
@@ -119,23 +119,98 @@ body {
   100% { box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.15); }
 }
 
-.puzzle-rotate {
-  position: absolute;
-  bottom: -12px;
-  width: 26px;
-  height: 26px;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(18, 22, 26, 0.85);
-  color: #fff;
-  font-size: 14px;
-  line-height: 26px;
-  padding: 0;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
-  touch-action: none;
+/* The piece the turn buttons act on: the last one touched. */
+.puzzle-piece.is-selected {
+  outline: 3px solid rgba(255, 211, 107, 0.95);
+  outline-offset: 2px;
 }
-.puzzle-rotate-left { left: -10px; }
-.puzzle-rotate-right { right: -10px; }
+/* Selected takes priority over the rotation warning: show gold, not orange. */
+.puzzle-piece.is-selected.is-needs-rotation {
+  outline-color: rgba(255, 211, 107, 0.95);
+  animation: none;
+}
+/* Placed in the right spot but rotation is still wrong — orange pulse tells the visitor to turn it. */
+.puzzle-piece.is-needs-rotation {
+  outline: 3px solid rgba(255, 140, 40, 0.9);
+  outline-offset: 2px;
+  animation: puzzle-needs-rot 1.4s ease-in-out infinite;
+}
+@keyframes puzzle-needs-rot {
+  0%, 100% { outline-color: rgba(255, 140, 40, 0.9); }
+  50% { outline-color: rgba(255, 200, 80, 0.6); }
+}
+/* When all pieces land on the board but aren't solved yet: the turn buttons briefly bounce. */
+.puzzle-rotate-btn.is-nudge .puzzle-rotate-disc {
+  animation: puzzle-btn-nudge 0.35s ease-in-out 1;
+}
+@keyframes puzzle-btn-nudge {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.18); }
+  70% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+
+/* The pair of big turn buttons under the tray. They act on the selected piece and never move or
+   turn themselves, so each one's direction reads at a glance. */
+.puzzle-rotator {
+  display: flex;
+  justify-content: center;
+  gap: 36px;
+  flex: 0 0 auto;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.puzzle-rotate-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 104px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgba(255, 255, 255, 0.88);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.7);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.puzzle-rotate-disc {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 66px;
+  height: 66px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 36%, #3d4350 0%, #1d2129 62%, #11141a 100%);
+  /* inside out: gold rim, dark gap, thin inner gold line; then a faint blue halo, a warm glow, a drop shadow */
+  box-shadow:
+    inset 0 0 0 2px #e2a93b,
+    inset 0 0 0 5px #12151b,
+    inset 0 0 0 6px rgba(226, 169, 59, 0.55),
+    0 0 0 3px rgba(130, 160, 235, 0.3),
+    0 0 18px rgba(240, 190, 90, 0.35),
+    0 6px 14px rgba(0, 0, 0, 0.5);
+  transition: transform 0.12s ease;
+}
+.puzzle-rotate-disc svg {
+  width: 44px;
+  height: 44px;
+  color: #f5d27a;
+  filter: drop-shadow(0 0 3px rgba(255, 200, 90, 0.85));
+}
+.puzzle-rotate-btn.is-left svg {
+  transform: scaleX(-1);
+}
+.puzzle-rotate-btn:active .puzzle-rotate-disc {
+  transform: scale(0.93);
+}
+.puzzle-rotate-btn:disabled {
+  opacity: 0.4;
+}
 
 /* The staff bypass's long-press zone: present but invisible, on purpose (see puzzle.js). */
 .puzzle-staff-corner {

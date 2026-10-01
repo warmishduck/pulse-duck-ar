@@ -14,6 +14,7 @@
 //   hue         placeholder art's colour, 0-360 (ignored once real art exists)
 //   creatureId  used as the localStorage key so progress on this creature survives a revisit
 import {MiniGame} from './base.js'
+import {TEXT} from '../i18n.js'
 import {makePlaceholderArt} from './placeholder-art.js'
 import {rememberStaffUnlocked, STAFF_PASSWORD, staffUnlocked} from '../staff.js'
 import {
@@ -50,6 +51,14 @@ const clearSave = (creatureId) => {
 }
 
 const make = (tag, className, props) => Object.assign(document.createElement(tag), {className}, props)
+
+// A three-quarter circle ending in an arrowhead, turning clockwise. The "rotate left" button
+// shows the same icon mirrored (CSS), so the two can never disagree about direction.
+const ROTATE_ICON = `<svg viewBox="0 0 48 48" aria-hidden="true">
+  <path d="M17.5 35.26 A13 13 0 1 1 35.26 30.5" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+  <path d="M40.9 33.8 L29.6 27.3 L31.8 36.6 Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M24 20 L25.3 22.7 L28 24 L25.3 25.3 L24 28 L22.7 25.3 L20 24 L22.7 22.7 Z" fill="rgba(150,170,220,0.75)"/>
+</svg>`
 
 // Loads `url` as a drawable image. Resolves to a generated placeholder instead if `url` is
 // missing, or if it fails to load (a typo'd path must not brick the puzzle). `source` can also
@@ -91,6 +100,8 @@ export default class PuzzleGame extends MiniGame {
     this.hintTimer = null
     this.hintedSlotEl = null
     this.longPressTimer = null
+    this.nudgeTimer = null
+    this.selectedId = null
 
     const layout = rowsOverride && colsOverride ? {rows: rowsOverride, cols: colsOverride} : null
     const {rows, cols, pieces} = createPuzzle(pieceCount, Math.random, layout)
@@ -119,6 +130,8 @@ export default class PuzzleGame extends MiniGame {
           this.buildPieces()
         }
         this.layoutTray()
+        const firstWrong = this.pieces.find((p) => !isPieceCorrect(p))
+        this.selectPiece(firstWrong ? firstWrong.id : null)
         if (isSolved(this.pieces)) {
           // A returning visitor who had already finished it: nothing to show them solving.
           this.finish(false)
@@ -184,8 +197,43 @@ export default class PuzzleGame extends MiniGame {
     const corner = make('div', 'puzzle-staff-corner')
     this.cornerEl = corner
 
-    stage.append(board, tray, corner)
+    // One pair of big turn buttons for whichever piece is selected (the last one touched),
+    // instead of tiny buttons on every piece: they stay put and upright however the piece is
+    // turned, so which way each one spins is always obvious.
+    const rotator = make('div', 'puzzle-rotator')
+    this.rotateButtons = [this.makeRotateButton(-1), this.makeRotateButton(1)]
+    rotator.append(...this.rotateButtons)
+
+    stage.append(board, tray, rotator, corner)
     this.root.appendChild(stage)
+  }
+
+  makeRotateButton(direction) {
+    const clockwise = direction > 0
+    const label = clockwise ? TEXT.rotateRight : TEXT.rotateLeft
+    const button = make('button', `puzzle-rotate-btn ${clockwise ? 'is-right' : 'is-left'}`, {type: 'button'})
+    button.setAttribute('aria-label', label)
+    const disc = make('span', 'puzzle-rotate-disc')
+    disc.innerHTML = ROTATE_ICON
+    button.append(disc, make('span', 'puzzle-rotate-label', {textContent: label}))
+    button.addEventListener('click', () => {
+      if (this.selectedId !== null) {
+        this.rotate(this.selectedId, direction)
+      }
+    })
+    return button
+  }
+
+  // Marks `pieceId` as the piece the turn buttons act on, and shows which one it is.
+  selectPiece(pieceId) {
+    if (this.selectedId !== null && this.pieceEls[this.selectedId]) {
+      this.pieceEls[this.selectedId].classList.remove('is-selected')
+    }
+    this.selectedId = pieceId
+    if (pieceId !== null) {
+      // is-selected takes visual priority over is-needs-rotation (both use outline, selected wins)
+      this.pieceEls[pieceId].classList.add('is-selected')
+    }
   }
 
   slotEl(row, col) {
@@ -200,6 +248,7 @@ export default class PuzzleGame extends MiniGame {
     const ph = sh / this.rows
 
     this.pieceEls = {}
+    this.angles = {}
     this.pieces.forEach((piece) => {
       const canvas = document.createElement('canvas')
       canvas.width = 160
@@ -213,26 +262,20 @@ export default class PuzzleGame extends MiniGame {
       el.setAttribute('aria-label', `Puzzle piece ${piece.id + 1}`)
       el.appendChild(canvas)
 
-      const rotateBtn = (dir, symbol, label) => {
-        const btn = make('button', `puzzle-rotate puzzle-rotate-${dir > 0 ? 'right' : 'left'}`, {type: 'button', textContent: symbol})
-        btn.setAttribute('aria-label', label)
-        btn.addEventListener('pointerdown', (e) => e.stopPropagation())
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation()
-          this.rotate(piece.id, dir)
-        })
-        return btn
-      }
-      el.append(rotateBtn(-1, '↶', 'Rotate left'), rotateBtn(1, '↷', 'Rotate right'))
-
       this.bindDrag(el, piece.id)
       this.pieceEls[piece.id] = el
       this.applyRotation(piece)
     })
   }
 
-  applyRotation(piece) {
-    this.pieceEls[piece.id].style.transform = `rotate(${piece.rotation * 90}deg)`
+  // Sets the piece's on-screen turn. `turned` is the quarter turn just made (+1 / -1): it is added
+  // to a running angle, so the CSS transition spins the short, visible way (going from 270deg to
+  // 0deg would otherwise swing three quarters backwards). Omitted: jump straight to the piece's
+  // own rotation (the first draw, or one restored from a save).
+  applyRotation(piece, turned = null) {
+    const angle = turned === null ? piece.rotation * 90 : this.angles[piece.id] + turned * 90
+    this.angles[piece.id] = angle
+    this.pieceEls[piece.id].style.transform = `rotate(${angle}deg)`
   }
 
   // Places every currently-unplaced piece into the tray (normal document flow — the browser
@@ -291,6 +334,7 @@ export default class PuzzleGame extends MiniGame {
         return
       }
       dragging = true
+      this.selectPiece(pieceId)
       try {
         el.setPointerCapture(event.pointerId)
       } catch (e) {
@@ -376,17 +420,43 @@ export default class PuzzleGame extends MiniGame {
     persistSave(this.creatureId, this.pieces)
     if (isSolved(this.pieces)) {
       this.finish(true)
+    } else {
+      this.updateRotationFeedback()
     }
   }
 
   rotate(pieceId, direction) {
     rotatePiece(this.pieces, pieceId, direction)
     const piece = this.pieces.find((p) => p.id === pieceId)
-    this.applyRotation(piece)
+    this.applyRotation(piece, direction)
     persistSave(this.creatureId, this.pieces)
     this.registerActivity()
     if (isSolved(this.pieces)) {
       this.finish(true)
+    } else {
+      this.updateRotationFeedback()
+    }
+  }
+
+  // When all pieces are on the board but some have wrong rotation: mark them with a warning border
+  // and auto-select the first one so the turn buttons immediately act on it.
+  updateRotationFeedback() {
+    const allPlaced = this.pieces.every((p) => p.row !== null)
+    this.pieces.forEach((p) => {
+      const el = this.pieceEls[p.id]
+      const inRightSpot = p.row === p.homeRow && p.col === p.homeCol
+      el.classList.toggle('is-needs-rotation', allPlaced && inRightSpot && p.rotation !== 0)
+    })
+    if (allPlaced) {
+      const firstWrong = this.pieces.find((p) => !isPieceCorrect(p))
+      if (firstWrong) {
+        this.selectPiece(firstWrong.id)
+        this.rotateButtons.forEach((btn) => btn.classList.add('is-nudge'))
+        clearTimeout(this.nudgeTimer)
+        this.nudgeTimer = setTimeout(() => {
+          this.rotateButtons.forEach((btn) => btn.classList.remove('is-nudge'))
+        }, 600)
+      }
     }
   }
 
@@ -494,6 +564,7 @@ export default class PuzzleGame extends MiniGame {
   // or the staff bypass): nothing to animate, just call onWin.
   finish(withFlourish) {
     this.solved = true
+    this.rotateButtons.forEach((button) => { button.disabled = true })
     clearTimeout(this.hintTimer)
     this.clearHint()
     clearSave(this.creatureId)   // a solved creature reverts to a fresh puzzle if ever reset
@@ -509,6 +580,7 @@ export default class PuzzleGame extends MiniGame {
     this.destroyed = true
     clearTimeout(this.hintTimer)
     clearTimeout(this.longPressTimer)
+    clearTimeout(this.nudgeTimer)
     this.stage.remove()
   }
 }
