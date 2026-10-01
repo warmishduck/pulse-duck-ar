@@ -340,6 +340,38 @@ body.welcome-page {
   letter-spacing: 0.02em;
 }
 
+/* The popup list of all four languages the ui-lang button opens (built in i18n.js's
+   createLangPicker, appended to <body> and positioned in JS, so only its looks live here). */
+.ui-lang-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(18, 22, 26, 0.92);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  pointer-events: auto;
+}
+.ui-lang-option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: 16px;
+  text-align: left;
+  padding: 11px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+}
+.ui-lang-option.is-current {
+  background: rgba(157, 255, 138, 0.22);
+  font-weight: 700;
+}
+
 /* The pill that switches between the creature showcase and the level. */
 .ui-mode {
   position: absolute;

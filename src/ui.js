@@ -2,7 +2,7 @@
 // loading note, a hint, a mode switch, the level's move/jump buttons, a mute button, a language
 // switch, and a photo button with a preview sheet. Styles are in index.css (the `.ui-*` rules).
 // The text comes from i18n.js.
-import {LANG_LABELS, nextLang, onLangChange, setLang, TEXT} from './i18n'
+import {createLangPicker, onLangChange, TEXT} from './i18n'
 
 const make = (tag, className, props) => Object.assign(document.createElement(tag), {className}, props)
 
@@ -21,7 +21,7 @@ export const createUi = ({
   const hint = make('div', 'ui-toast ui-hint', {textContent: TEXT.hintCreatures})
   const mute = make('button', 'ui-button ui-mute', {type: 'button', textContent: '🔊'})
   mute.setAttribute('aria-label', TEXT.mute)
-  const langButton = make('button', 'ui-button ui-lang', {type: 'button'})
+  const langButton = createLangPicker({onInteract: onGesture})   // self-syncing badge + popup menu
   const mode = make('button', 'ui-mode', {type: 'button', textContent: TEXT.modeToLevel})
   mode.hidden = !showModeButton
   const flash = make('div', 'ui-flash')
@@ -110,8 +110,7 @@ export const createUi = ({
   // whenever the language changes; `ui.text.*` itself is the same object throughout (see TEXT in
   // i18n.js), so a notice about to be shown picks up the switch too.
   const refreshTexts = () => {
-    langButton.textContent = LANG_LABELS[nextLang()]
-    langButton.setAttribute('aria-label', TEXT.language)
+    // langButton keeps its own badge/aria in sync (see createLangPicker).
     mute.setAttribute('aria-label', muted ? TEXT.unmute : TEXT.mute)
     if (shutter) {
       shutter.setAttribute('aria-label', TEXT.photo)
@@ -137,10 +136,6 @@ export const createUi = ({
     mute.setAttribute('aria-label', muted ? TEXT.unmute : TEXT.mute)
   })
 
-  langButton.addEventListener('click', () => {
-    onGesture()
-    setLang(nextLang())
-  })
   onLangChange(refreshTexts)
 
   mode.addEventListener('click', () => {

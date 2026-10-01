@@ -6,7 +6,7 @@ import * as THREE from 'three'
 
 import {PREVIEW} from './content/exhibits.js'
 import {addLights} from './lights'
-import {LANG_LABELS, nextLang, onLangChange, setLang, TEXT} from './i18n'
+import {createLangPicker, onLangChange, TEXT} from './i18n'
 import {createShowcase} from './showcase'
 import {setMuted} from './sound'
 
@@ -51,7 +51,7 @@ export const startWelcome = ({unknownCode = false} = {}) => {
 
   // ---- the words ----
   const root = make('div', 'ui welcome-ui')
-  const langButton = make('button', 'ui-button ui-lang', {type: 'button'})
+  const langButton = createLangPicker()   // self-syncing badge + popup menu of all four languages
   const card = make('div', 'welcome-card')
   const title = make('h1')
   const body = make('p', 'welcome-body')
@@ -65,12 +65,9 @@ export const startWelcome = ({unknownCode = false} = {}) => {
     title.textContent = TEXT.welcomeTitle
     body.textContent = TEXT.welcomeBody
     note.textContent = TEXT.welcomeUnknown
-    langButton.textContent = LANG_LABELS[nextLang()]
-    langButton.setAttribute('aria-label', TEXT.language)
   }
   refreshTexts()
   onLangChange(refreshTexts)
-  langButton.addEventListener('click', () => setLang(nextLang()))
 
   // ---- the creatures ----
   // Taps make them react just as in AR, but silently: nobody expects noise from a page they

@@ -1,6 +1,11 @@
 // The demo's languages and the language switch's state, shared by every screen (the AR view's
 // on-screen extras in ui.js, the welcome page in welcome.js). All user-facing text lives in
-// STRINGS, one object per language, so it is easy to change or add to.
+// STRINGS, one object per language, so it is easy to change or add to. config.test.js checks
+// every language carries exactly the same set of keys, so a missing or extra one fails the build.
+//
+// NOTE: the Finnish (fi) and Swedish (sv) strings are my drafts — accurate enough to ship a demo,
+// but a native speaker (e.g. museum staff) should read them over before the real opening,
+// especially the longer sentences and the museum-signage tone.
 
 export const STRINGS = {
   uk: {
@@ -57,17 +62,74 @@ export const STRINGS = {
     welcomeBody: 'Scan the QR code next to an exhibit to meet its creature',
     welcomeUnknown: 'This code was not recognised. Try scanning it again.',
   },
+  fi: {
+    loading: (done, total) => `Ladataan olentoja… ${done}/${total}`,
+    loadingLevel: 'Ladataan tasoa…',
+    hintCreatures: 'Napauta olentoa — se reagoi',
+    hintLevel: 'Napauta maata — Glowcap kävelee sinne. Sen valo rakentaa sillan',
+    modeToLevel: '🎮 Taso',
+    modeToCreatures: '🌰 Olennot',
+    actionGrow: '🌿 Kasvata oksa',
+    actionRemove: '🍂 Poista oksa',
+    won: 'Glowcap pääsi uloskäynnille! ✨',
+    branchLost: 'Oksa katosi: terho harhautui liian kauas',
+    left: 'Vasen',
+    right: 'Oikea',
+    jump: 'Hyppy',
+    mute: 'Mykistä ääni',
+    unmute: 'Poista mykistys',
+    photo: 'Ota kuva',
+    share: 'Jaa',
+    close: 'Sulje',
+    saveHelp: 'Paina kuvaa pitkään tallentaaksesi sen',
+    photoFailed: 'Kuvan ottaminen epäonnistui',
+    language: 'Kieli',
+    title: 'Metsän olennot · AR',
+    welcomeTitle: 'Metsän olennot',
+    welcomeBody: 'Skannaa näyttelyesineen vieressä oleva QR-koodi tavataksesi sen olennon',
+    welcomeUnknown: 'Koodia ei tunnistettu. Yritä skannata se uudelleen.',
+  },
+  sv: {
+    loading: (done, total) => `Laddar varelser… ${done}/${total}`,
+    loadingLevel: 'Laddar nivån…',
+    hintCreatures: 'Tryck på en varelse — den reagerar',
+    hintLevel: 'Tryck på marken — Glowcap går dit. Dess ljus bygger bron',
+    modeToLevel: '🎮 Nivå',
+    modeToCreatures: '🌰 Varelser',
+    actionGrow: '🌿 Väx en gren',
+    actionRemove: '🍂 Ta bort grenen',
+    won: 'Glowcap nådde utgången! ✨',
+    branchLost: 'Grenen är borta: ekollonet gick för långt',
+    left: 'Vänster',
+    right: 'Höger',
+    jump: 'Hoppa',
+    mute: 'Stäng av ljud',
+    unmute: 'Sätt på ljud',
+    photo: 'Ta ett foto',
+    share: 'Dela',
+    close: 'Stäng',
+    saveHelp: 'Håll in bilden för att spara den',
+    photoFailed: 'Det gick inte att ta ett foto',
+    language: 'Språk',
+    title: 'Skogens varelser · AR',
+    welcomeTitle: 'Skogens varelser',
+    welcomeBody: 'Skanna QR-koden bredvid ett utställningsföremål för att möta dess varelse',
+    welcomeUnknown: 'Koden kändes inte igen. Försök skanna den igen.',
+  },
 }
 
-// The order the switch goes through, and what its button says when the next one is that language.
-export const LANGS = ['uk', 'en']
-export const LANG_LABELS = {uk: 'UA', en: 'EN'}
+// The four museum languages. LANG_LABELS is the two-letter badge on the corner button;
+// LANG_NAMES is each language's own name, shown in the picker menu (so a Finnish visitor sees
+// "Suomi", not a foreign word for their language).
+export const LANGS = ['uk', 'en', 'fi', 'sv']
+export const LANG_LABELS = {uk: 'UA', en: 'EN', fi: 'FI', sv: 'SV'}
+export const LANG_NAMES = {uk: 'Українська', en: 'English', fi: 'Suomi', sv: 'Svenska'}
 
 const LANG_KEY = 'lumina-ar-lang'
 
-// Starts from whatever was picked last time; otherwise from the browser's own language (so the
-// user's own phone opens in Ukrainian and, say, a boss's English phone opens in English without
-// either of them having to choose). Falls back to English, the more widely understood default.
+// Starts from whatever was picked last time; otherwise from the browser's own language (so a
+// Finnish visitor's phone opens in Finnish, a Swedish one in Swedish, the user's own in Ukrainian,
+// with no one having to choose). Falls back to English, the most widely understood here.
 const detectLang = () => {
   try {
     const saved = localStorage.getItem(LANG_KEY)
@@ -77,8 +139,8 @@ const detectLang = () => {
   } catch (e) {
     // Storage blocked (private mode, restricted embed): fall through to the browser's language.
   }
-  const browser = typeof navigator !== 'undefined' ? (navigator.language || '') : ''
-  return browser.toLowerCase().startsWith('uk') ? 'uk' : 'en'
+  const browser = (typeof navigator !== 'undefined' ? (navigator.language || '') : '').toLowerCase()
+  return LANGS.find((code) => browser.startsWith(code)) || 'en'
 }
 
 const saveLang = (lang) => {
@@ -121,10 +183,70 @@ export const setLang = (next) => {
   listeners.forEach((listener) => listener(next))
 }
 
-// The language the switch would go to next.
-export const nextLang = () => LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length]
-
 // `listener(lang)` is called after every switch.
 export const onLangChange = (listener) => {
   listeners.push(listener)
+}
+
+// Builds the corner language control: a small round button showing the current language's badge
+// (EN/UA/FI/SV) that opens a popup menu of all four, each in its own name. Returned as a detached
+// <button> (class `ui-lang`, so the corner-positioning CSS applies) to append wherever the control
+// goes; it keeps its own badge in sync with the language, so callers don't manage it. `onInteract`
+// runs when the menu opens (ui.js uses it to unlock audio on the first gesture). Replaces the old
+// two-way toggle — a cycle through four languages would be a confusing way to reach the last one.
+export const createLangPicker = ({onInteract = () => {}} = {}) => {
+  const button = document.createElement('button')
+  button.type = 'button'
+  button.className = 'ui-button ui-lang'
+  const sync = () => {
+    button.textContent = LANG_LABELS[lang]
+    button.setAttribute('aria-label', TEXT.language)
+  }
+  sync()
+  onLangChange(sync)
+
+  let menu = null
+  const closeMenu = () => {
+    if (menu) {
+      menu.remove()
+      menu = null
+      document.removeEventListener('pointerdown', onOutside, true)
+    }
+  }
+  // A tap anywhere that isn't the menu or the button itself dismisses the menu (the button's own
+  // tap is handled by its click, which toggles).
+  const onOutside = (event) => {
+    if (menu && !menu.contains(event.target) && event.target !== button) {
+      closeMenu()
+    }
+  }
+  button.addEventListener('click', () => {
+    onInteract()
+    if (menu) {
+      closeMenu()
+      return
+    }
+    menu = document.createElement('div')
+    menu.className = 'ui-lang-menu'
+    LANGS.forEach((code) => {
+      const option = document.createElement('button')
+      option.type = 'button'
+      option.className = `ui-lang-option${code === lang ? ' is-current' : ''}`
+      option.textContent = LANG_NAMES[code]
+      option.addEventListener('click', (event) => {
+        event.stopPropagation()
+        setLang(code)
+        closeMenu()
+      })
+      menu.appendChild(option)
+    })
+    document.body.appendChild(menu)
+    // Pin it just under the button, aligned to the button's right edge (the button lives in a
+    // top corner), clamped away from the screen edge.
+    const r = button.getBoundingClientRect()
+    menu.style.top = `${r.bottom + 8}px`
+    menu.style.right = `${Math.max(8, window.innerWidth - r.right)}px`
+    document.addEventListener('pointerdown', onOutside, true)
+  })
+  return button
 }
