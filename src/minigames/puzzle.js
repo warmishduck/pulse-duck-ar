@@ -136,6 +136,9 @@ export default class PuzzleGame extends MiniGame {
           // A returning visitor who had already finished it: nothing to show them solving.
           this.finish(false)
         } else {
+          // Show rotation feedback immediately if a save was restored with pieces already on the
+          // board — without this the visitor would see a "done" board with no signal to rotate.
+          this.updateRotationFeedback()
           this.resetHintTimer()
         }
       } catch (e) {
