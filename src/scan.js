@@ -1,8 +1,10 @@
 // The object scanner (`/?scan`), all in one camera session:
 //  1. searching: the camera looks for any exhibit object registered as an image target;
 //  2. found: the object glows, and the visitor is asked to point the camera at the floor;
-//  3. placed: once they do, that exhibit's creatures appear on the floor below the object, facing
-//     them (see floor-spot.js), and the regular exhibit view (threejs-scene-init.js) takes over.
+//  3. placed: once they do, that exhibit's creatures appear on the floor where they look, short
+//     of the object's wall, facing them (see floor-spot.js), and the regular exhibit view
+//     (threejs-scene-init.js) takes over.
+// Add `debug` to the address (/?scan&debug) for a live readout of all this on the phone.
 
 import * as THREE from 'three'
 
@@ -10,7 +12,8 @@ import {CREATURES} from './content/creatures.js'
 import {IMAGE_TARGET_DATA} from './image-targets'
 import {routeFromImageTarget} from './route'
 import {TEXT} from './i18n'
-import {floorSpotBelow} from './floor-spot'
+import {floorSpot} from './floor-spot'
+import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
 import {startXr} from './xr-pipeline'
@@ -137,8 +140,10 @@ const scanPipelineModule = () => {
   let hint = null
   let canvas = null
   let exhibitModule = null
+  const debug = createDebugPanel()
 
   const onObjectSeen = ({detail}) => {
+    debug?.set('seen', `${detail.name} scale=${detail.scale?.toFixed(2)} pos=${detail.position.x.toFixed(2)}, ${detail.position.y.toFixed(2)}, ${detail.position.z.toFixed(2)}`)
     if (state === 'searching') {
       const match = routeFromImageTarget(detail.name)
       if (!match) {
@@ -157,10 +162,24 @@ const scanPipelineModule = () => {
 
   const placeExhibit = (anchor) => {
     state = 'placed'
+    debug?.set('state', state)
+    debug?.set('anchor', anchor.position)
+    debug?.set('anchor scale', anchor.scale)
     glow.hide()
     hint.remove()
-    exhibitModule = initScenePipelineModule(exhibit, {anchor})
-    exhibitModule.onStart({canvas})
+    // Setting the scene up renders (the lights' environment map) in the middle of an 8th Wall
+    // frame, so three's cached WebGL state is resynced before and after.
+    const {renderer} = XR8.Threejs.xrScene()
+    renderer.resetState()
+    try {
+      exhibitModule = initScenePipelineModule(exhibit, {anchor})
+      exhibitModule.onStart({canvas})
+    } catch (error) {
+      debug?.set('place error', error?.stack || error)
+      throw error
+    } finally {
+      renderer.resetState()
+    }
   }
 
   return {
@@ -172,27 +191,36 @@ const scanPipelineModule = () => {
       placeCameraAtStart(camera)
       glow = createObjectGlow(scene)
       hint = createHint(TEXT.scanHint)
+      debug?.set('state', state)
     },
 
     onUpdate: () => {
       const dt = clock.getDelta()
       glow.update(dt)
+      if (debug) {
+        const {camera} = XR8.Threejs.xrScene()
+        debug.set('camera', camera.position)
+        debug.set('looking down (y < -0.35)', camera.getWorldDirection(forward).y)
+      }
       if (state === 'placed') {
         exhibitModule.onUpdate()
         return
       }
       if (state === 'found') {
         foundSeconds += dt
+        debug?.set('state', `${state} ${foundSeconds.toFixed(1)}s`)
         if (foundSeconds < MIN_GLOW_SECONDS) {
           return
         }
         const {camera} = XR8.Threejs.xrScene()
-        const anchor = floorSpotBelow(objectPosition, camera.position, camera.getWorldDirection(forward), tallestCreature(exhibit))
+        const anchor = floorSpot(objectPosition, camera.position, camera.getWorldDirection(forward), tallestCreature(exhibit))
         if (anchor) {
           placeExhibit(anchor)
         }
       }
     },
+
+    onException: (error) => debug?.set('8th Wall exception', error?.stack || error?.message || error),
 
     // Without A-Frame, 8th Wall delivers reality.* events only to pipeline-module listeners.
     listeners: [
