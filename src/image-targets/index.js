@@ -8,9 +8,11 @@
 //   3. Import the JSON here and add it to IMAGE_TARGET_DATA below.
 //   4. Set `imageTarget: 'exhibit-01'` on the matching entry in exhibits.js.
 //
-// Example (uncomment and repeat for each exhibit):
+import catsPainting from '../../public/image-targets/cats-painting/cats-painting.json'
+
+// Example for future targets (uncomment and repeat):
 //   import exhibit01 from '../../public/image-targets/exhibit-01/exhibit-01.json'
 
 export const IMAGE_TARGET_DATA = [
-  // Paste generated imports here, one per exhibit.
+  catsPainting,
 ]
