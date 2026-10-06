@@ -1,6 +1,8 @@
 // A small mossy stone wall with a glowing door outline on its front: where a creature hides until
-// its puzzle is solved, then walks out through (see showcase.js's lockStyle 'wall'). Built from
-// rounded boxes, so it needs no model file. It stands on y = 0, centred on x = 0, front face +z.
+// its puzzle is solved, then walks out through, after which the wall sinks into the floor (see
+// showcase.js's lockStyle 'wall'). Built from rounded boxes, so it needs no model file. It stands
+// on y = 0, centred on x = 0, front face +z. Whatever goes below the world's floor (y = 0) is cut
+// away, which needs the renderer's localClippingEnabled (threejs-scene-init.js turns it on).
 
 import * as THREE from 'three'
 import {RoundedBoxGeometry} from 'three/addons/geometries/RoundedBoxGeometry.js'
@@ -57,7 +59,11 @@ const makeDoorTexture = () => {
 export const createStoneWall = ({width, height, depth}) => {
   const random = seededRandom(7)
   const root = new THREE.Group()
+  const body = new THREE.Group()   // what shakes and sinks; root keeps the wall's place
+  root.add(body)
   const rowHeight = height / ROWS
+  const aboveFloor = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0)]   // world space
+  const clipped = (material) => Object.assign(material, {clippingPlanes: aboveFloor, clipShadows: true})
 
   // Stones in a running bond: every other row shifted by about half a stone.
   const stones = []
@@ -75,7 +81,7 @@ export const createStoneWall = ({width, height, depth}) => {
   }
   const stoneMesh = new THREE.InstancedMesh(
     new RoundedBoxGeometry(1, 1, 1, 2, 0.18),
-    new THREE.MeshStandardMaterial({roughness: 0.95, metalness: 0}),
+    clipped(new THREE.MeshStandardMaterial({roughness: 0.95, metalness: 0})),
     stones.length
   )
   const matrix = new THREE.Matrix4()
@@ -93,13 +99,13 @@ export const createStoneWall = ({width, height, depth}) => {
   })
   stoneMesh.castShadow = true
   stoneMesh.receiveShadow = true
-  root.add(stoneMesh)
+  body.add(stoneMesh)
 
   // Moss along the top: flattened green lumps.
   const mossCount = Math.max(3, Math.round((width / rowHeight) * 1.6))
   const mossMesh = new THREE.InstancedMesh(
     new THREE.SphereGeometry(1, 10, 6),
-    new THREE.MeshStandardMaterial({roughness: 1, metalness: 0}),
+    clipped(new THREE.MeshStandardMaterial({roughness: 1, metalness: 0})),
     mossCount
   )
   for (let i = 0; i < mossCount; i++) {
@@ -110,24 +116,29 @@ export const createStoneWall = ({width, height, depth}) => {
     mossMesh.setColorAt(i, color.setHex(MOSS_COLORS[Math.floor(random() * MOSS_COLORS.length)]))
   }
   mossMesh.castShadow = true
-  root.add(mossMesh)
+  body.add(mossMesh)
 
   // The door: a glow on the front face, the way out once the puzzle is solved.
   const doorHeight = height * 0.82
   const door = new THREE.Mesh(
     new THREE.PlaneGeometry(width * 0.5, doorHeight),
-    new THREE.MeshBasicMaterial({
+    clipped(new THREE.MeshBasicMaterial({
       map: makeDoorTexture(), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
-    })
+    }))
   )
   door.position.set(0, doorHeight / 2, depth * 0.6)
-  root.add(door)
+  body.add(door)
 
   return {
     root,
     setDoorGlow: (level) => {
       door.material.opacity = level
       door.visible = level > 0.001
+    },
+    /** @param {number} amount - 0 standing, 1 fully under the floor. It shakes on the way down. */
+    setSunk: (amount) => {
+      body.position.y = -amount * height
+      body.position.x = Math.sin(amount * 70) * rowHeight * 0.06 * (1 - amount)
     },
   }
 }

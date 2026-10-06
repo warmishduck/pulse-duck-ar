@@ -28,6 +28,9 @@ const UNLOCK_FALLBACK_MS = 900   // how long to hold before going idle when ther
 const WALL = {width: 1.0, height: 1.1, depth: 0.14, behind: 0.4}
 const WAIT_BEHIND = 0.85
 const WALK_SECONDS = 1.3
+const SINK_DELAY = 0.6       // seconds after the creature is out before its wall starts to sink
+const SINK_SECONDS = 1.4
+const DUST_COLOR = 0xc9b8a0
 
 // Returns a copy of `array` in random order (Fisher-Yates).
 const shuffled = (array) => {
@@ -82,6 +85,9 @@ export const createShowcase = ({
   const homes = items.map(() => null)                 // where it stands once awake (x, 0, z)
   const walls = items.map(() => null)                 // lockStyle 'wall': its stone wall
   const walks = items.map(() => null)                 // {from, elapsed, action} while walking out
+  const sinks = items.map(() => null)                 // seconds into its wall's sink (< 0: waiting)
+  const dust = items.map(() => null)                  // the puff as its wall starts to sink
+  const sunk = items.map(() => false)                 // its wall is gone
 
   let finished = 0    // how many models have loaded (or failed to)
   let now = 0         // the time of the latest update(), which taps are stamped with
@@ -361,6 +367,13 @@ export const createShowcase = ({
     playSound('whoosh')
   }
 
+  // Takes a wall out of the scene for good: hidden, and no longer caught by taps.
+  const removeWall = (index) => {
+    sinks[index] = null
+    sunk[index] = true
+    walls[index].root.visible = false
+  }
+
   // Puts a walking creature on its spot in front of the wall, back in its idle loop.
   const endWalk = (index) => {
     const walk = walks[index]
@@ -392,9 +405,9 @@ export const createShowcase = ({
       groups.forEach((group) => {
         group.visible = on
       })
-      walls.forEach((wall) => {
+      walls.forEach((wall, i) => {
         if (wall) {
-          wall.root.visible = on
+          wall.root.visible = on && !sunk[i]
         }
       })
       glows.forEach((glow) => {
@@ -432,6 +445,9 @@ export const createShowcase = ({
             restoreMaterials(i)
             lockState[i] = 'unlocked'
           }
+          if (walls[i] && lockState[i] === 'unlocked' && !sunk[i]) {
+            removeWall(i)   // out already: coming back to a wall still standing would be odd
+          }
         })
       }
     },
@@ -439,7 +455,7 @@ export const createShowcase = ({
     // Returns the index of whichever creature the aimed raycaster's ray hits (or the wall it hides
     // behind), or -1 if it missed them all.
     hitTest(raycaster) {
-      const wallRoots = walls.map((wall) => (wall ? wall.root : null))
+      const wallRoots = walls.map((wall, i) => (wall && !sunk[i] ? wall.root : null))
       const targets = [...groups, ...wallRoots.filter(Boolean)]
       const hits = raycaster.intersectObjects(targets, true)  // true: check nested meshes too
       if (hits.length === 0) {
@@ -555,8 +571,34 @@ export const createShowcase = ({
         if (progress === 1) {
           endWalk(i)
           wake(i)
+          sinks[i] = -SINK_DELAY
         }
       })
+      sinks.forEach((elapsed, i) => {
+        if (elapsed === null) {
+          return
+        }
+        const next = elapsed + dt
+        sinks[i] = next
+        if (next < 0) {
+          return
+        }
+        const wall = walls[i]
+        if (elapsed < 0) {
+          // A puff of dust at its foot as it starts to go.
+          const puff = new THREE.Group()
+          puff.position.copy(wall.root.position)
+          wall.root.parent.add(puff)
+          dust[i] = createSparkBurst(puff, {radius: items[i].targetHeight * 0.5, color: DUST_COLOR})
+          playSound('rumble')
+        }
+        const progress = Math.min(next / SINK_SECONDS, 1)
+        wall.setSunk(progress * progress)   // slow to start, then it drops away
+        if (progress === 1) {
+          removeWall(i)
+        }
+      })
+      dust.forEach((puff) => puff && puff.update(dt))
 
       groups.forEach((group, i) => {
         const {spinSpeed = 0, phase = 0, hover = 0.08, bob = 0.05} = items[i]

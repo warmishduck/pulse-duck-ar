@@ -118,6 +118,11 @@ const SOUNDS = {
     ;[392, 523, 659, 784, 1047].forEach((hz, i) => tone('sine', hz * 0.9, hz, 0.5, 0.22, t + i * 0.07))
     noiseBurst(0.35, 1500, 4200, 0.15, t + 0.05)
   },
+  // A stone wall sinking into the floor: a low grinding rumble that settles.
+  rumble: (t) => {
+    noiseBurst(1.2, 400, 90, 0.4, t)
+    tone('triangle', 90, 45, 1.1, 0.25, t)
+  },
 }
 
 export const playSound = (name) => {
