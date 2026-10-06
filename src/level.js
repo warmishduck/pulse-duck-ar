@@ -503,7 +503,9 @@ export const createLevel = ({glowLight, onEvent = () => {}, data = LIGHT_THE_WAY
         return true
       }
       const point = new THREE.Vector3()
-      if (!raycaster.ray.intersectPlane(stagePlane, point) ||
+      // stagePlane is in the level's own space, which scan.js may move and turn.
+      const localRay = raycaster.ray.clone().applyMatrix4(root.matrixWorld.clone().invert())
+      if (!localRay.intersectPlane(stagePlane, point) ||
           Math.abs(point.x - STAGE.x) > STAGE.width / 2 || point.y < 0 || point.y > STAGE.height) {
         return false
       }

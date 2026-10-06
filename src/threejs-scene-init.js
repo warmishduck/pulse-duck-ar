@@ -14,7 +14,28 @@ import {createShowcase} from './showcase'
 import {isMuted, playSound, resumeAudio, setMuted} from './sound'
 import {createUi} from './ui'
 
-export const initScenePipelineModule = (exhibit) => {
+/**
+ * Sets the AR camera's starting pose: 2 units above the floor (y = 0), pulled back so the
+ * creatures standing around the origin fit a portrait screen. Call once, when the camera starts.
+ *
+ * @param {THREE.Camera} camera - The camera from XR8.Threejs.xrScene().
+ */
+export const placeCameraAtStart = (camera) => {
+  camera.position.set(0, 2, 3.5)
+  XR8.XrController.updateCameraProjectionMatrix({origin: camera.position, facing: camera.quaternion})
+}
+
+/**
+ * @param {import('./content/exhibits.js').Exhibit} exhibit
+ * @param {Object} [options]
+ * @param {{position: THREE.Vector3, yaw: number, scale: number}} [options.anchor] - Stand the
+ *   content at this floor point, turned by `yaw` and shrunk by `scale`, inside a camera session
+ *   another module already started
+ *   (scan.js calls onStart/onUpdate itself). Without it the content stands at the world origin
+ *   and this module sets the camera up.
+ * @returns {Object} An 8th Wall camera pipeline module.
+ */
+export const initScenePipelineModule = (exhibit, {anchor = null} = {}) => {
   const clock = new THREE.Clock()
 
   const hasCreatures = exhibit.creatures.length > 0
@@ -59,10 +80,20 @@ export const initScenePipelineModule = (exhibit) => {
     // The level diorama is a box: anything outside it is clipped away.
     renderer.localClippingEnabled = true
 
-    const {glowLight} = addLights(scene, renderer)
+    // Everything the exhibit shows lives in `stage`, so an anchor moves it all at once.
+    const stage = new THREE.Group()
+    if (anchor) {
+      stage.position.copy(anchor.position)
+      stage.rotation.y = anchor.yaw
+      stage.scale.setScalar(anchor.scale)
+    }
+    scene.add(stage)
+
+    const {glowLight, keyLight} = addLights(scene, renderer)
+    stage.add(keyLight, keyLight.target)   // its shadows only reach +/-2 around the target
 
     showcase = createShowcase({placements: exhibit.creatures, glowLight, onProgress: modelProgress})
-    showcase.load(scene)
+    showcase.load(stage)
 
     // The level diorama. Hidden (and not even loaded) until it is shown.
     if (hasGame) {
@@ -77,14 +108,21 @@ export const initScenePipelineModule = (exhibit) => {
           }
         },
       })
-      scene.add(level.root)
+      stage.add(level.root)
     }
 
     addShadowFloor(scene)
 
-    // Set the initial camera position relative to the scene. Must be above y = 0.
-    // Pulled back a little so all the characters fit a portrait phone screen.
-    camera.position.set(0, 2, 3.5)
+    if (!anchor) {
+      placeCameraAtStart(camera)
+    }
+  }
+
+  // Recentering moves the camera back to its start pose; anchored content would not follow it.
+  const onEmptyTap = () => {
+    if (!anchor) {
+      XR8.XrController.recenter()
+    }
   }
 
   // Points the raycaster along the ray from the camera through a tap.
@@ -176,11 +214,6 @@ export const initScenePipelineModule = (exhibit) => {
         event.preventDefault()
       })
 
-      // Sync the xr controller's 6DoF position and camera parameters with our scene.
-      XR8.XrController.updateCameraProjectionMatrix(
-        {origin: camera.position, facing: camera.quaternion}
-      )
-
       // iOS only lets audio start on touchend/click (not touchstart). Sounds are already
       // scheduled by then; this releases them.
       canvas.addEventListener('touchend', resumeAudio)
@@ -198,7 +231,7 @@ export const initScenePipelineModule = (exhibit) => {
             if (level.tap(raycaster)) {
               ui.hideHint()
             } else {
-              XR8.XrController.recenter()
+              onEmptyTap()
             }
             return
           }
@@ -206,7 +239,7 @@ export const initScenePipelineModule = (exhibit) => {
           if (hitIndex !== -1) {
             onTap(hitIndex)
           } else {
-            XR8.XrController.recenter()
+            onEmptyTap()
           }
         }, true
       )

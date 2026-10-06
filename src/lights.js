@@ -3,10 +3,12 @@
 import * as THREE from 'three'
 import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js'
 
-// Adds the lights to `scene` and returns {glowLight}: the one point light the glowcap's glow
-// drives. It is created up front at zero intensity, because adding a light later changes the
-// light count and makes three recompile every lit material, which would freeze the first tap
-// for a moment. Each glow moves it into its own group when it is on show.
+// Adds the lights to `scene` and returns {glowLight, keyLight}. glowLight is the one point light
+// the glowcap's glow drives. It is created up front at zero intensity, because adding a light
+// later changes the light count and makes three recompile every lit material, which would freeze
+// the first tap for a moment. Each glow moves it into its own group when it is on show.
+// keyLight casts the shadows, which only reach +/-2 around its target (the world origin until
+// someone moves the light and its target elsewhere).
 export const addLights = (scene, renderer) => {
   // Enable shadows in the renderer.
   renderer.shadowMap.enabled = true
@@ -42,7 +44,7 @@ export const addLights = (scene, renderer) => {
 
   const glowLight = new THREE.PointLight(0x9dff7a, 0, 2.5, 2)
   scene.add(glowLight)
-  return {glowLight}
+  return {glowLight, keyLight: directionalLight}
 }
 
 // A plane that receives the models' shadows and is otherwise invisible (in AR the camera feed
