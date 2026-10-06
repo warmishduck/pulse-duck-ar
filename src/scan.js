@@ -12,7 +12,7 @@ import {CREATURES} from './content/creatures.js'
 import {IMAGE_TARGET_DATA} from './image-targets'
 import {routeFromImageTarget} from './route'
 import {TEXT} from './i18n'
-import {floorSpot} from './floor-spot'
+import {FLOOR_PITCH, floorSpot} from './floor-spot'
 import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
@@ -200,7 +200,7 @@ const scanPipelineModule = () => {
       if (debug) {
         const {camera} = XR8.Threejs.xrScene()
         debug.set('camera', camera.position)
-        debug.set('looking down (y < -0.35)', camera.getWorldDirection(forward).y)
+        debug.set(`looking down (y < ${FLOOR_PITCH})`, camera.getWorldDirection(forward).y)
       }
       if (state === 'placed') {
         exhibitModule.onUpdate()

@@ -38,7 +38,7 @@ export const STRINGS = {
     welcomeUnknown: 'Цей код не розпізнано. Спробуй відсканувати його ще раз.',
     scanObjects: 'Навести на предмет',
     scanHint: 'Наведи камеру на предмет у залі',
-    scanFloor: 'Знайдено! Тепер наведи камеру на підлогу під ним',
+    scanFloor: 'Знайдено! Тепер наведи камеру на підлогу перед собою',
   },
   en: {
     loading: (done, total) => `Loading creatures… ${done}/${total}`,
@@ -70,7 +70,7 @@ export const STRINGS = {
     welcomeUnknown: 'This code was not recognised. Try scanning it again.',
     scanObjects: 'Scan an object',
     scanHint: 'Point the camera at a museum exhibit',
-    scanFloor: 'Found it! Now point the camera at the floor below it',
+    scanFloor: 'Found it! Now point the camera at the floor in front of you',
   },
   fi: {
     loading: (done, total) => `Ladataan olentoja… ${done}/${total}`,
@@ -102,7 +102,7 @@ export const STRINGS = {
     welcomeUnknown: 'Koodia ei tunnistettu. Yritä skannata se uudelleen.',
     scanObjects: 'Skannaa esine',
     scanHint: 'Osoita kamera museoesineeseen',
-    scanFloor: 'Löytyi! Osoita nyt kameralla lattiaan sen alla',
+    scanFloor: 'Löytyi! Osoita nyt kameralla lattiaan edessäsi',
   },
   sv: {
     loading: (done, total) => `Laddar varelser… ${done}/${total}`,
@@ -134,7 +134,7 @@ export const STRINGS = {
     welcomeUnknown: 'Koden kändes inte igen. Försök skanna den igen.',
     scanObjects: 'Skanna ett föremål',
     scanHint: 'Rikta kameran mot ett museiföremål',
-    scanFloor: 'Hittad! Rikta nu kameran mot golvet under den',
+    scanFloor: 'Hittad! Rikta nu kameran mot golvet framför dig',
   },
 }
 

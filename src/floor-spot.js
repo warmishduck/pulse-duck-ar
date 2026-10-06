@@ -1,18 +1,20 @@
 // Where content goes once a recognised object (a painting on a wall) is found and the visitor
-// points the camera down: where the view meets the floor, but never past the object's wall.
-// The view ray keeps the spot on screen even when the object's estimated position is off — its
-// distance is the least certain part of an image target's pose. Pure (three.js maths only, no
+// points the camera down: where the view meets the floor, but close to the visitor (on the phone,
+// the view ray at a shallow tilt met the floor metres away, behind the wall) and never past the
+// object's wall. The object's own distance is only a guard: it is the least certain part of an
+// image target's pose and came out far too large on the phone. Pure (three.js maths only, no
 // DOM, no 8th Wall), so it can be tested in Node. The floor is the plane y = 0, as the 8th Wall
 // world tracking sets it up (see placeCameraAtStart in threejs-scene-init.js).
 
 import * as THREE from 'three'
 
-/** Camera forward `y` below this counts as looking at the floor (about 20° down). */
-export const FLOOR_PITCH = -0.35
+/** Camera forward `y` below this counts as looking at the floor (30° down). */
+export const FLOOR_PITCH = -0.5
 /** How far out from the object's wall content stands at most (scene units). */
 export const WALL_GAP = 0.5
-/** Never closer to the camera than this, along the floor (scene units). */
+/** Closest and farthest from the camera, along the floor (scene units; the camera starts 2 up). */
 export const MIN_DISTANCE = 0.8
+export const MAX_DISTANCE = 1.6
 /** Content stays below this share of the object's height above the floor, so it never covers it. */
 export const MAX_HEIGHT_SHARE = 0.6
 /** Never shrink content below this. */
@@ -36,7 +38,7 @@ export const floorSpot = (objectPosition, cameraPosition, forward, contentHeight
     ? new THREE.Vector3(forward.x / horizontal, 0, forward.z / horizontal)
     : new THREE.Vector3(0, 0, -1)   // straight down: no heading, so use the default one
 
-  let along = (cameraPosition.y / -forward.y) * horizontal   // where the view ray meets the floor
+  let along = Math.min((cameraPosition.y / -forward.y) * horizontal, MAX_DISTANCE)   // view ray meets floor
   const objectAlong = (objectPosition.x - cameraPosition.x) * heading.x + (objectPosition.z - cameraPosition.z) * heading.z
   if (objectAlong > WALL_GAP) {
     along = Math.min(along, objectAlong - WALL_GAP)
