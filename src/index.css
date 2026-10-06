@@ -322,6 +322,21 @@ body.welcome-page {
   margin-top: 12px;
   color: #ffd28a;
 }
+.welcome-card .welcome-scan-btn {
+  margin-top: 18px;
+  min-height: 48px;
+  padding: 0 26px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffe2a6;
+  color: #1a2a23;
+  font: 600 17px/1.2 -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
+  text-shadow: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.welcome-card .welcome-scan-btn:active {
+  transform: scale(0.97);
+}
 
 /* ---- On-screen extras (built in src/ui.js) ---- */
 

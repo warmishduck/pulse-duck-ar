@@ -2,26 +2,24 @@ import { defineConfig } from 'vite'
 import { resolve } from 'node:path'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
+// Serves (dev) and copies (build) an 8th Wall package's scripts and its resources/ folder to
+// external/xr/, the layout index.html and the engine expect. stripBase drops the 4 leading
+// segments node_modules/@8thwall/<pkg>/dist; LICENSE is skipped so the packages don't collide.
+const engineFiles = (pkg) => ({
+  src: `node_modules/@8thwall/${pkg}/dist/{*.js,resources/**/*}`,
+  dest: 'external/xr',
+  rename: {stripBase: 4},
+})
+
 export default defineConfig({
   base: './',
   assetsInclude: ['**/*.glb', '**/*.gltf'],
   plugins: [
-    // Copy 8th Wall engine packages from node_modules into public/external/xr at dev time
-    // and into dist/external/xr at build time.
     viteStaticCopy({
       targets: [
-        {
-          src: 'node_modules/@8thwall/engine-binary/dist/*',
-          dest: 'external/xr',
-        },
-        {
-          src: 'node_modules/@8thwall/xrextras/dist/*',
-          dest: 'external/xr',
-        },
-        {
-          src: 'node_modules/@8thwall/landing-page/dist/*',
-          dest: 'external/xr',
-        },
+        engineFiles('engine-binary'),
+        engineFiles('xrextras'),
+        engineFiles('landing-page'),
       ],
     }),
   ],

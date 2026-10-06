@@ -4,13 +4,13 @@
   "name": "cats-painting",
   "type": "PLANAR",
   "properties": {
-    "left": 0,
-    "top": 0,
-    "width": 1932,
-    "height": 2576,
-    "isRotated": false,
-    "originalWidth": 1932,
-    "originalHeight": 2576
+    "top": 280,
+    "left": 683,
+    "width": 998,
+    "height": 1330,
+    "isRotated": true,
+    "originalWidth": 2576,
+    "originalHeight": 1932
   },
   "resources": {
     "originalImage": "cats-painting_original.jpg",
@@ -18,6 +18,6 @@
     "thumbnailImage": "cats-painting_thumbnail.jpg",
     "luminanceImage": "cats-painting_luminance.jpg"
   },
-  "created": 1791295440348,
-  "updated": 1791295440348
+  "created": 1791296000151,
+  "updated": 1791296000151
 }

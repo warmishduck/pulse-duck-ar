@@ -8,7 +8,7 @@ import {CREATURES} from '../src/content/creatures.js'
 import {EXHIBITS, PREVIEW} from '../src/content/exhibits.js'
 import {GAMES} from '../src/content/games.js'
 import {LANG_LABELS, LANGS, STRINGS} from '../src/i18n.js'
-import {resolveRoute} from '../src/route.js'
+import {resolveRoute, routeFromImageTarget} from '../src/route.js'
 
 let failures = 0
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); if (!ok) failures++ }
@@ -52,6 +52,16 @@ check('an unknown code: the welcome page, saying so', route('?c=zz').kind === 'w
 check('junk codes never open anything', ['../x', 'a b', '<script>', 'x'.repeat(200), '-1', '%00'].every((c) => route(`?c=${encodeURIComponent(c)}`).kind === 'welcome'))
 check('prototype names are not exhibits', ['constructor', 'toString', '__proto__', 'hasOwnProperty'].every((c) => route(`?c=${c}`).kind === 'welcome'))
 check('a custom exhibit list is used when given', resolveRoute('?c=a', {a: {creatures: []}}).kind === 'exhibit')
+check('/?scan opens the object scanner', route('?scan').kind === 'scan' && route('?scan=1').kind === 'scan')
+check('an exhibit code wins over scan', route('?scan&c=03').kind === 'exhibit')
+
+// ---------------------------------------------------------------- picking an exhibit from a recognised object
+check('a known image target opens its exhibit', routeFromImageTarget('cats-painting')?.code === 'office-cats')
+check('an unknown image target opens nothing', routeFromImageTarget('nope') === null && routeFromImageTarget(undefined) === null)
+check('image target names are unique across exhibits', (() => {
+  const names = Object.values(EXHIBITS).map((e) => e.imageTarget).filter(Boolean)
+  return new Set(names).size === names.length
+})())
 
 console.log(failures === 0 ? '\nALL CONFIG CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures ? 1 : 0)

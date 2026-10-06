@@ -41,7 +41,12 @@ const makeGround = () => {
   return ground
 }
 
-export const startWelcome = ({unknownCode = false, hasScan = false, onScan = null} = {}) => {
+/**
+ * @param {Object} [options]
+ * @param {boolean} [options.unknownCode] - Show the "code not recognised" note.
+ * @param {boolean} [options.hasScan] - Offer the object scanner (image targets are configured).
+ */
+export const startWelcome = ({unknownCode = false, hasScan = false} = {}) => {
   // The camera feed's canvas (index.html) is for the AR view only.
   const feed = document.getElementById('camerafeed')
   if (feed) {
@@ -60,15 +65,13 @@ export const startWelcome = ({unknownCode = false, hasScan = false, onScan = nul
   card.append(title, body, note)
 
   if (hasScan) {
-    const divider = make('p', 'welcome-divider')
-    divider.setAttribute('aria-hidden', 'true')
-    divider.textContent = '—'
-    const scanBtn = make('button', 'ui-button welcome-scan-btn')
+    const scanBtn = make('button', 'welcome-scan-btn', {type: 'button'})
     const refreshScanBtn = () => { scanBtn.textContent = TEXT.scanObjects }
     refreshScanBtn()
     onLangChange(refreshScanBtn)
-    scanBtn.addEventListener('click', () => onScan?.())
-    card.append(divider, scanBtn)
+    // A fresh page load, so the scanner starts clean instead of beside this page's WebGL preview.
+    scanBtn.addEventListener('click', () => { window.location.search = '?scan' })
+    card.append(scanBtn)
   }
 
   root.append(langButton, card)

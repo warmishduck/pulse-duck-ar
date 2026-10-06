@@ -1,12 +1,12 @@
 // app.js is the main entry point. The page's address decides what it shows (see route.js):
 //  - /?c=03   the AR view of that exhibit, through the 8th Wall camera pipeline;
+//  - /?scan   the camera, looking for an exhibit object (see scan.js);
 //  - /        the welcome page, which has no camera at all (see welcome.js).
 
 import {initScenePipelineModule} from './threejs-scene-init'
-import {resolveRoute, routeFromImageTarget} from './route'
+import {resolveRoute} from './route'
 import {startWelcome} from './welcome'
-import {IMAGE_TARGET_DATA} from './image-targets'
-import {TEXT} from './i18n'
+import {canScan, startScan} from './scan'
 import * as THREE from 'three';
 
 window.THREE = THREE
@@ -35,56 +35,11 @@ const startAr = (exhibit) => {
   window.XR8 ? onxrloaded() : window.addEventListener('xrloaded', onxrloaded)
 }
 
-// Starts a camera-only scan session for image target detection.
-// Navigates to the matching exhibit when any configured image target is found.
-const startImageTargetScan = () => {
-  document.querySelector('.welcome-ui')?.remove()
-  document.querySelector('.welcome-canvas')?.remove()
-  document.body.classList.remove('welcome-page')
-
-  const canvas = document.createElement('canvas')
-  canvas.id = 'camerafeed'
-  document.body.appendChild(canvas)
-
-  const overlay = document.createElement('div')
-  overlay.className = 'ui scan-overlay'
-  const hint = document.createElement('p')
-  hint.className = 'scan-hint'
-  hint.textContent = TEXT.scanHint
-  overlay.appendChild(hint)
-  document.body.appendChild(overlay)
-
-  const onxrloaded = () => {
-    XR8.XrController.configure({imageTargetData: IMAGE_TARGET_DATA, disableWorldTracking: true})
-    XR8.addCameraPipelineModules([
-      XR8.GlTextureRenderer.pipelineModule(),
-      XR8.XrController.pipelineModule(),
-      LandingPage.pipelineModule(),
-      XRExtras.FullWindowCanvas.pipelineModule(),
-      XRExtras.Loading.pipelineModule(),
-      XRExtras.RuntimeError.pipelineModule(),
-    ])
-    window.addEventListener('reality.imagefound', (e) => {
-      const match = routeFromImageTarget(e.detail.name)
-      if (match) {
-        window.location.search = `?c=${match.code}`
-      }
-    })
-    XR8.run({canvas})
-  }
-
-  window.XR8 ? onxrloaded() : window.addEventListener('xrloaded', onxrloaded)
-}
-
-const hasScan = IMAGE_TARGET_DATA.length > 0
-
 const route = resolveRoute(window.location.search)
 if (route.kind === 'exhibit') {
   startAr(route.exhibit)
+} else if (route.kind === 'scan' && canScan) {
+  startScan()
 } else {
-  startWelcome({
-    unknownCode: route.unknownCode,
-    hasScan,
-    onScan: hasScan ? startImageTargetScan : null,
-  })
+  startWelcome({unknownCode: route.kind === 'welcome' && route.unknownCode, hasScan: canScan})
 }

@@ -16,6 +16,21 @@
 
 import {CREATURES} from './creatures.js'
 
+/**
+ * @typedef {Object} Placement
+ * @property {string} id - A key of CREATURES.
+ * @property {number} x - Metres left/right of the phone's start point.
+ * @property {number} z - Metres in front (negative) or behind.
+ */
+
+/**
+ * @typedef {Object} Exhibit
+ * @property {Placement[]} creatures
+ * @property {string} [game] - A key of GAMES in content/games.js.
+ * @property {'game'} [startIn]
+ * @property {string} [imageTarget] - Name of the image target that opens this exhibit.
+ */
+
 const at = (id, x = 0, z = -0.2, extra = {}) => ({id, x, z, ...extra})
 
 // A creature shown on its own (most real exhibits, one QR each), 3x its usual size: without the
