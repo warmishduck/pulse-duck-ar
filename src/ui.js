@@ -12,13 +12,15 @@ const make = (tag, className, props) => Object.assign(document.createElement(tag
 // button (grow / remove the branch). `onGesture()` is called on button presses so the caller
 // can unlock audio (iOS only allows that from a real touch/click). `showModeButton` is false for
 // an exhibit that has only one of the two modes, so there is nothing to switch to.
+// `creaturesHint` is the i18n key of the hint shown with the creatures.
 export const createUi = ({
   onToggleMute, onPhoto, onToggleMode, onAction = () => {}, onGesture = () => {}, showModeButton = true,
+  creaturesHint = 'hintCreatures',
 }) => {
   const root = make('div', 'ui')
   const loading = make('div', 'ui-toast ui-loading')
   const notice = make('div', 'ui-toast ui-notice')
-  const hint = make('div', 'ui-toast ui-hint', {textContent: TEXT.hintCreatures})
+  const hint = make('div', 'ui-toast ui-hint', {textContent: TEXT[creaturesHint]})
   const mute = make('button', 'ui-button ui-mute', {type: 'button', textContent: '🔊'})
   mute.setAttribute('aria-label', TEXT.mute)
   const langButton = createLangPicker({onInteract: onGesture})   // self-syncing badge + popup menu
@@ -121,7 +123,7 @@ export const createUi = ({
     share.textContent = TEXT.share
     close.textContent = TEXT.close
     mode.textContent = currentMode === 'level' ? TEXT.modeToCreatures : TEXT.modeToLevel
-    hint.textContent = currentMode === 'level' ? TEXT.hintLevel : TEXT.hintCreatures
+    hint.textContent = currentMode === 'level' ? TEXT.hintLevel : TEXT[creaturesHint]
     if (currentActionKind !== null) {
       action.textContent = currentActionKind === 'remove' ? TEXT.actionRemove : TEXT.actionGrow
     }
@@ -205,7 +207,7 @@ export const createUi = ({
       const inLevel = name === 'level'
       setVisible(controls, inLevel)
       mode.textContent = inLevel ? TEXT.modeToCreatures : TEXT.modeToLevel
-      hint.textContent = inLevel ? TEXT.hintLevel : TEXT.hintCreatures
+      hint.textContent = inLevel ? TEXT.hintLevel : TEXT[creaturesHint]
       held.left = false
       held.right = false
       jumpQueued = false

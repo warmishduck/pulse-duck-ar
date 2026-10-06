@@ -7,6 +7,7 @@
 //    creatures.
 import * as THREE from 'three';
 
+import {CREATURES} from './content/creatures.js'
 import {GAMES} from './content/games.js'
 import {createLevel} from './level'
 import {addLights, addShadowFloor} from './lights'
@@ -39,6 +40,11 @@ export const initScenePipelineModule = (exhibit, {anchor = null} = {}) => {
   const clock = new THREE.Clock()
 
   const hasCreatures = exhibit.creatures.length > 0
+  // Placed by the scanner, a creature still behind its puzzle hides behind a stone wall instead of
+  // standing as a silhouette (see showcase.js's lockStyle).
+  const lockStyle = anchor ? 'wall' : 'silhouette'
+  const hidesBehindWall = lockStyle === 'wall' &&
+    exhibit.creatures.some((placement) => ({...CREATURES[placement.id], ...placement}).puzzle)
   // What plays, if anything (content/games.js turns an id like 'light_the_way' into the level
   // data an actual game reads). Only one `type` exists yet ('platformer', run by level.js); a
   // second kind of game would be started here too, picked by `game.type`, alongside this one.
@@ -92,7 +98,7 @@ export const initScenePipelineModule = (exhibit, {anchor = null} = {}) => {
     const {glowLight, keyLight} = addLights(scene, renderer)
     stage.add(keyLight, keyLight.target)   // its shadows only reach +/-2 around the target
 
-    showcase = createShowcase({placements: exhibit.creatures, glowLight, onProgress: modelProgress})
+    showcase = createShowcase({placements: exhibit.creatures, glowLight, onProgress: modelProgress, lockStyle})
     showcase.load(stage)
 
     // The level diorama. Hidden (and not even loaded) until it is shown.
@@ -201,6 +207,7 @@ export const initScenePipelineModule = (exhibit, {anchor = null} = {}) => {
         onAction: () => level && level.pressAction(),
         onGesture: resumeAudio,
         showModeButton: hasCreatures && hasGame,   // with only one of them there is nothing to switch to
+        creaturesHint: hidesBehindWall ? 'hintWall' : 'hintCreatures',
       })
       ui.setLoading(0, exhibit.creatures.length)
 

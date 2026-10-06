@@ -14,6 +14,7 @@ import {artUrl, modelUrl} from './models'
 import {measureModel, pinRootHorizontally} from './rig'
 import {playSound} from './sound'
 import {createSparkBurst} from './spark'
+import {createStoneWall} from './stone-wall'
 
 const BPM = 70                 // "heartbeat" rate for the idle pulse animation
 const JUMP_DURATION = 0.45     // seconds a tap-triggered hop takes, start to finish
@@ -22,6 +23,11 @@ const HIT_BOX_EXTRA_HEIGHT = 0.4  // headroom above an animated character that s
 const SILHOUETTE_COLOR = 0x0a0d0a
 const SILHOUETTE_OPACITY = 0.55
 const UNLOCK_FALLBACK_MS = 900   // how long to hold before going idle when there's no unlockAnim
+// lockStyle 'wall', as shares of the creature's height: the wall's size, how far its centre stands
+// behind the creature's spot, and how far behind that spot the creature waits.
+const WALL = {width: 1.0, height: 1.1, depth: 0.14, behind: 0.4}
+const WAIT_BEHIND = 0.85
+const WALK_SECONDS = 1.3
 
 // Returns a copy of `array` in random order (Fisher-Yates).
 const shuffled = (array) => {
@@ -39,8 +45,13 @@ const shuffled = (array) => {
 // `glowLight` is the shared point light the glowcap's glow drives. `onProgress(done, total)` is
 // called as each model finishes loading (or fails to). `puzzlesEnabled` is false for the welcome
 // page's preview: it always shows creatures awake, never gated behind their puzzle, since it is
-// meant to be a glimpse of what is inside, not a copy of the exhibit.
-export const createShowcase = ({placements, glowLight, onProgress = () => {}, puzzlesEnabled = true}) => {
+// meant to be a glimpse of what is inside, not a copy of the exhibit. `lockStyle` is how a
+// creature still behind its puzzle looks: 'silhouette' (a dark stand-in where it stands) or
+// 'wall' (hidden behind a stone wall; tapping the wall opens the puzzle, and once it is solved
+// the creature walks out through the wall's door).
+export const createShowcase = ({
+  placements, glowLight, onProgress = () => {}, puzzlesEnabled = true, lockStyle = 'silhouette',
+}) => {
   // Each item is a creature's own settings with this placement's overrides on top.
   const items = placements.map((placement) => ({...CREATURES[placement.id], ...placement}))
 
@@ -67,6 +78,10 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
   const puzzleRoots = items.map(() => null)           // its DOM mount point, if any
   const activeSparks = items.map(() => null)
   const puzzleArt = items.map(() => null)             // an auto-rendered <canvas> portrait, once taken
+  const models = items.map(() => null)                // the loaded model, once in
+  const homes = items.map(() => null)                 // where it stands once awake (x, 0, z)
+  const walls = items.map(() => null)                 // lockStyle 'wall': its stone wall
+  const walks = items.map(() => null)                 // {from, elapsed, action} while walking out
 
   let finished = 0    // how many models have loaded (or failed to)
   let now = 0         // the time of the latest update(), which taps are stamped with
@@ -176,6 +191,20 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
     group.visible = active
     scene.add(group)
     groups[index] = group
+    homes[index] = new THREE.Vector3(x, 0, z)
+
+    if (lockState[index] && lockStyle === 'wall') {
+      const wall = createStoneWall({
+        width: targetHeight * WALL.width, height: targetHeight * WALL.height, depth: targetHeight * WALL.depth,
+      })
+      wall.root.position.set(x, 0, z - targetHeight * WALL.behind)
+      wall.root.visible = active
+      scene.add(wall.root)
+      walls[index] = wall
+      // It waits behind the wall, on the line it will walk out along (the way it faces).
+      group.position.x -= Math.sin(yaw) * targetHeight * WAIT_BEHIND
+      group.position.z -= Math.cos(yaw) * targetHeight * WAIT_BEHIND
+    }
 
     if (reactions || lockState[index]) {
       // An invisible box to tap on. A moving skinned mesh is a poor hit target (its cached
@@ -232,6 +261,7 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
         }
 
         group.add(model)
+        models[index] = model
 
         // Animated models come back with a mixer that is already playing their idle clip.
         if (mixer) {
@@ -241,7 +271,11 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
             setupReactions(index, mixer, mixer.clipAction(idleClip), clips, reactions)
           }
         }
-        if (lockState[index]) {
+        if (walls[index]) {
+          // Out of sight behind its wall until the puzzle is solved (it may already be, if the
+          // model loaded late).
+          model.visible = lockState[index] !== 'locked' && lockState[index] !== 'opening'
+        } else if (lockState[index]) {
           applySilhouette(index, model)
         }
         if (glow) {
@@ -266,6 +300,80 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
     )
   }
 
+  // The moment a puzzle is won: real materials back, a spark burst, its wake sound, and — if it has
+  // one — its `unlockAnim` played once before settling into the ordinary idle/tap-reacts-to
+  // `reactions` state.
+  const wake = (index) => {
+    restoreMaterials(index)
+    const item = items[index]
+    activeSparks[index] = createSparkBurst(groups[index], {radius: item.targetHeight * 0.6})
+    playSound('wake')
+
+    const mixer = mixerByIndex[index]
+    const clips = clipsByIndex[index]
+    const unlockClip = item.unlockAnim && clips && THREE.AnimationClip.findByName(clips, item.unlockAnim)
+    const idleAction = reactionStates[index] ? reactionStates[index].idle : null
+
+    if (!unlockClip || !mixer) {
+      if (item.unlockAnim) {
+        console.warn(`unlockAnim clip "${item.unlockAnim}" not found in the model`)
+      }
+      setTimeout(() => { lockState[index] = 'unlocked' }, UNLOCK_FALLBACK_MS)
+      return
+    }
+    const action = mixer.clipAction(unlockClip)
+    action.reset()
+    action.setLoop(THREE.LoopOnce, 1)
+    action.clampWhenFinished = true
+    action.play()
+    if (idleAction) {
+      action.crossFadeFrom(idleAction, 0.3, false)
+    }
+    const holdMs = Math.max((unlockClip.duration / (action.timeScale || 1)) * 1000, 300)
+    setTimeout(() => {
+      if (idleAction) {
+        idleAction.reset().play().crossFadeFrom(action, 0.4, false)
+      }
+      lockState[index] = 'unlocked'
+    }, holdMs)
+  }
+
+  // lockStyle 'wall', once the puzzle is won: the creature shows up behind its wall and walks out
+  // through the door, playing its `walkAnim` if it has one; update() moves it, then wake().
+  const startWalk = (index) => {
+    const item = items[index]
+    if (models[index]) {
+      models[index].visible = true
+    }
+    const mixer = mixerByIndex[index]
+    const clips = clipsByIndex[index]
+    const walkClip = item.walkAnim && clips && THREE.AnimationClip.findByName(clips, item.walkAnim)
+    let action = null
+    if (walkClip && mixer) {
+      action = mixer.clipAction(walkClip)
+      action.reset().setLoop(THREE.LoopRepeat, Infinity).play()
+      const idleAction = reactionStates[index] ? reactionStates[index].idle : null
+      if (idleAction) {
+        action.crossFadeFrom(idleAction, 0.25, false)
+      }
+    }
+    walks[index] = {from: groups[index].position.clone(), elapsed: 0, action}
+    playSound('whoosh')
+  }
+
+  // Puts a walking creature on its spot in front of the wall, back in its idle loop.
+  const endWalk = (index) => {
+    const walk = walks[index]
+    walks[index] = null
+    groups[index].position.x = homes[index].x
+    groups[index].position.z = homes[index].z
+    walls[index].setDoorGlow(0)
+    const idleAction = reactionStates[index] ? reactionStates[index].idle : null
+    if (walk.action && idleAction) {
+      idleAction.reset().play().crossFadeFrom(walk.action, 0.25, false)
+    }
+  }
+
   return {
     count: items.length,
 
@@ -283,6 +391,11 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
       active = on
       groups.forEach((group) => {
         group.visible = on
+      })
+      walls.forEach((wall) => {
+        if (wall) {
+          wall.root.visible = on
+        }
       })
       glows.forEach((glow) => {
         if (!glow) {
@@ -313,6 +426,9 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
           if (lockState[i] === 'opening') {
             lockState[i] = 'locked'
           } else if (lockState[i] === 'unlocking') {
+            if (walks[i]) {
+              endWalk(i)
+            }
             restoreMaterials(i)
             lockState[i] = 'unlocked'
           }
@@ -320,20 +436,25 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
       }
     },
 
-    // Returns the index of whichever creature the aimed raycaster's ray hits, or -1 if it
-    // missed them all.
+    // Returns the index of whichever creature the aimed raycaster's ray hits (or the wall it hides
+    // behind), or -1 if it missed them all.
     hitTest(raycaster) {
-      const hits = raycaster.intersectObjects(groups, true)  // true: check nested meshes too
+      const wallRoots = walls.map((wall) => (wall ? wall.root : null))
+      const targets = [...groups, ...wallRoots.filter(Boolean)]
+      const hits = raycaster.intersectObjects(targets, true)  // true: check nested meshes too
       if (hits.length === 0) {
         return -1
       }
 
-      // Walk up from the hit mesh to whichever top-level group it belongs to.
+      // Walk up from the hit mesh to whichever top-level group or wall it belongs to.
       let node = hits[0].object
-      while (node && !groups.includes(node)) {
+      while (node && !targets.includes(node)) {
         node = node.parent
       }
-      return groups.indexOf(node)
+      if (!node) {
+        return -1
+      }
+      return groups.includes(node) ? groups.indexOf(node) : wallRoots.indexOf(node)
     },
 
     // Makes creature `index` react in whatever way its entry describes: opens its puzzle if it's
@@ -397,43 +518,14 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
       })
     },
 
-    // Called once a puzzle is won: restores the creature's real materials, a spark burst, its
-    // wake sound, and — if it has one — its `unlockAnim` played once before settling into the
-    // ordinary idle/tap-reacts-to `reactions` state.
+    // Called once a puzzle is won: behind a wall, the creature first walks out; then it wakes.
     unlock(index) {
       lockState[index] = 'unlocking'
-      restoreMaterials(index)
-      const item = items[index]
-      activeSparks[index] = createSparkBurst(groups[index], {radius: item.targetHeight * 0.6})
-      playSound('wake')
-
-      const mixer = mixerByIndex[index]
-      const clips = clipsByIndex[index]
-      const unlockClip = item.unlockAnim && clips && THREE.AnimationClip.findByName(clips, item.unlockAnim)
-      const idleAction = reactionStates[index] ? reactionStates[index].idle : null
-
-      if (!unlockClip || !mixer) {
-        if (item.unlockAnim) {
-          console.warn(`unlockAnim clip "${item.unlockAnim}" not found in the model`)
-        }
-        setTimeout(() => { lockState[index] = 'unlocked' }, UNLOCK_FALLBACK_MS)
-        return
+      if (walls[index]) {
+        startWalk(index)
+      } else {
+        wake(index)
       }
-      const action = mixer.clipAction(unlockClip)
-      action.reset()
-      action.setLoop(THREE.LoopOnce, 1)
-      action.clampWhenFinished = true
-      action.play()
-      if (idleAction) {
-        action.crossFadeFrom(idleAction, 0.3, false)
-      }
-      const holdMs = Math.max((unlockClip.duration / (action.timeScale || 1)) * 1000, 300)
-      setTimeout(() => {
-        if (idleAction) {
-          idleAction.reset().play().crossFadeFrom(action, 0.4, false)
-        }
-        lockState[index] = 'unlocked'
-      }, holdMs)
     },
 
     // Advances the skeletal animations, then spins, bobs and pulses each creature, adding a hop
@@ -443,6 +535,28 @@ export const createShowcase = ({placements, glowLight, onProgress = () => {}, pu
       mixerByIndex.forEach((mixer) => mixer && mixer.update(dt))
       glows.forEach((glow) => glow && updateGlow(glow, dt, t))
       activeSparks.forEach((spark) => spark && spark.update(dt))
+
+      walls.forEach((wall, i) => {
+        if (wall && (lockState[i] === 'locked' || lockState[i] === 'opening')) {
+          wall.setDoorGlow(0.45 + 0.25 * Math.sin(t * 2.5))   // a slow pulse: tap me
+        }
+      })
+      walks.forEach((walk, i) => {
+        if (!walk) {
+          return
+        }
+        walk.elapsed += dt
+        const progress = Math.min(walk.elapsed / WALK_SECONDS, 1)
+        const eased = progress * progress * (3 - 2 * progress)
+        groups[i].position.x = THREE.MathUtils.lerp(walk.from.x, homes[i].x, eased)
+        groups[i].position.z = THREE.MathUtils.lerp(walk.from.z, homes[i].z, eased)
+        // The door flares as it opens, then fades while the creature steps through.
+        walls[i].setDoorGlow(progress < 0.2 ? 0.7 + progress * 1.5 : 1 - (progress - 0.2) / 0.8)
+        if (progress === 1) {
+          endWalk(i)
+          wake(i)
+        }
+      })
 
       groups.forEach((group, i) => {
         const {spinSpeed = 0, phase = 0, hover = 0.08, bob = 0.05} = items[i]

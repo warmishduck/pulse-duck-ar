@@ -26,6 +26,8 @@
 //   unlockAnim the clip to play once, in full, the moment the puzzle is solved (its "waking up"
 //               animation) before settling into its `reactions`. Optional: without one it still
 //               unlocks, just with no dedicated animation for the moment itself.
+//   walkAnim   the clip to loop while it walks out from behind its wall (the scanner's lock
+//               style, see showcase.js). Optional: without one it glides out.
 // A placement in an exhibit can override any of these for that one exhibit.
 
 export const CREATURES = {
@@ -41,6 +43,7 @@ export const CREATURES = {
     // `Jump` stands in for a proper wake animation until one exists.
     puzzle: {pieces: 6, rows: 3, cols: 2, snapRatio: 0.15, hintMs: 15000, art: 'Acorn-art.webp', label: 'Acorn'},
     unlockAnim: 'Jump',
+    walkAnim: 'Run',
   },
   pinecone: {
     file: 'Pinecone.glb', targetHeight: 0.8, phase: Math.PI / 2, spinSpeed: -0.6, hopSound: 'pop',
