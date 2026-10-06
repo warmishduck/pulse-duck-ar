@@ -21,10 +21,9 @@
     <meta property="og:image:height" content="630">
     <meta name="twitter:card" content="summary_large_image">
 
-    <!-- The 8th Wall engine, vendored (not loaded from a CDN) so the site works without any
-         third-party dependency at runtime — see README.md's "Self-hosted engine" section for the
-         licence terms this must follow. Do not edit these files; replacing them means downloading
-         a fresh copy of the same package version and dropping it in unchanged. -->
+    <!-- The 8th Wall engine: copied from npm packages into external/xr/ by vite-plugin-static-copy
+         at dev and build time (see vite.config.js). Do not edit these files manually;
+         to upgrade, bump the package versions in package.json and run npm install. -->
     <script src="external/xr/xr.js" async data-preload-chunks="slam"></script>
     <script src="external/xr/xrextras.js"></script>
     <script src="external/xr/landing-page.js"></script>

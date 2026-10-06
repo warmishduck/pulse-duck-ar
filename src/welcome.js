@@ -41,7 +41,7 @@ const makeGround = () => {
   return ground
 }
 
-export const startWelcome = ({unknownCode = false} = {}) => {
+export const startWelcome = ({unknownCode = false, hasScan = false, onScan = null} = {}) => {
   // The camera feed's canvas (index.html) is for the AR view only.
   const feed = document.getElementById('camerafeed')
   if (feed) {
@@ -58,6 +58,19 @@ export const startWelcome = ({unknownCode = false} = {}) => {
   const note = make('p', 'welcome-note')
   note.hidden = !unknownCode
   card.append(title, body, note)
+
+  if (hasScan) {
+    const divider = make('p', 'welcome-divider')
+    divider.setAttribute('aria-hidden', 'true')
+    divider.textContent = '—'
+    const scanBtn = make('button', 'ui-button welcome-scan-btn')
+    const refreshScanBtn = () => { scanBtn.textContent = TEXT.scanObjects }
+    refreshScanBtn()
+    onLangChange(refreshScanBtn)
+    scanBtn.addEventListener('click', () => onScan?.())
+    card.append(divider, scanBtn)
+  }
+
   root.append(langButton, card)
   document.body.appendChild(root)
 

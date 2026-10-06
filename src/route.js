@@ -21,3 +21,14 @@ export const resolveRoute = (search, exhibits = EXHIBITS) => {
   }
   return {kind: 'welcome', unknownCode: true}
 }
+
+// Maps an image-target name (from reality.imagefound) to the matching exhibit.
+// Returns {code, exhibit} or null if not found.
+export const routeFromImageTarget = (targetName, exhibits = EXHIBITS) => {
+  const entry = Object.entries(exhibits).find(([, ex]) => ex.imageTarget === targetName)
+  if (!entry) {
+    return null
+  }
+  const [code, exhibit] = entry
+  return {code, exhibit}
+}

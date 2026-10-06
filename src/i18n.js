@@ -36,6 +36,8 @@ export const STRINGS = {
     welcomeTitle: 'Лісові істоти',
     welcomeBody: 'Відскануй QR-код біля експоната, щоб зустріти його істоту',
     welcomeUnknown: 'Цей код не розпізнано. Спробуй відсканувати його ще раз.',
+    scanObjects: 'Навести на предмет',
+    scanHint: 'Наведи камеру на предмет у залі',
   },
   en: {
     loading: (done, total) => `Loading creatures… ${done}/${total}`,
@@ -65,6 +67,8 @@ export const STRINGS = {
     welcomeTitle: 'Forest Creatures',
     welcomeBody: 'Scan the QR code next to an exhibit to meet its creature',
     welcomeUnknown: 'This code was not recognised. Try scanning it again.',
+    scanObjects: 'Scan an object',
+    scanHint: 'Point the camera at a museum exhibit',
   },
   fi: {
     loading: (done, total) => `Ladataan olentoja… ${done}/${total}`,
@@ -94,6 +98,8 @@ export const STRINGS = {
     welcomeTitle: 'Metsän olennot',
     welcomeBody: 'Skannaa näyttelyesineen vieressä oleva QR-koodi tavataksesi sen olennon',
     welcomeUnknown: 'Koodia ei tunnistettu. Yritä skannata se uudelleen.',
+    scanObjects: 'Skannaa esine',
+    scanHint: 'Osoita kamera museoesineeseen',
   },
   sv: {
     loading: (done, total) => `Laddar varelser… ${done}/${total}`,
@@ -123,6 +129,8 @@ export const STRINGS = {
     welcomeTitle: 'Skogens varelser',
     welcomeBody: 'Skanna QR-koden bredvid ett utställningsföremål för att möta dess varelse',
     welcomeUnknown: 'Koden kändes inte igen. Försök skanna den igen.',
+    scanObjects: 'Skanna ett föremål',
+    scanHint: 'Rikta kameran mot ett museiföremål',
   },
 }
 

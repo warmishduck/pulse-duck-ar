@@ -30,9 +30,10 @@ const TOGETHER = [
 ]
 
 export const EXHIBITS = {
-  '01': {creatures: [alone('acorn')]},
-  '02': {creatures: [alone('pinecone')]},
-  '03': {creatures: [alone('glowcap')], game: 'light_the_way'},
+  // imageTarget matches the name given when running image-target-cli on that exhibit's photo.
+  '01': {creatures: [alone('acorn')], imageTarget: '01'},
+  '02': {creatures: [alone('pinecone')], imageTarget: '02'},
+  '03': {creatures: [alone('glowcap')], game: 'light_the_way', imageTarget: '03'},
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
   // The yard game, open whenever the museum is closed: no creatures, straight into the game.
