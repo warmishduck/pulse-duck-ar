@@ -124,21 +124,7 @@ body {
   outline: 3px solid rgba(255, 211, 107, 0.95);
   outline-offset: 2px;
 }
-/* Selected takes priority over the rotation warning: show gold, not orange. */
-.puzzle-piece.is-selected.is-needs-rotation {
-  outline-color: rgba(255, 211, 107, 0.95);
-  animation: none;
-}
-/* Placed in the right spot but rotation is still wrong — orange pulse tells the visitor to turn it. */
-.puzzle-piece.is-needs-rotation {
-  outline: 3px solid rgba(255, 140, 40, 0.9);
-  outline-offset: 2px;
-  animation: puzzle-needs-rot 1.4s ease-in-out infinite;
-}
-@keyframes puzzle-needs-rot {
-  0%, 100% { outline-color: rgba(255, 140, 40, 0.9); }
-  50% { outline-color: rgba(255, 200, 80, 0.6); }
-}
+
 /* When all pieces land on the board but aren't solved yet: the turn buttons briefly bounce. */
 .puzzle-rotate-btn.is-nudge .puzzle-rotate-disc {
   animation: puzzle-btn-nudge 0.35s ease-in-out 1;

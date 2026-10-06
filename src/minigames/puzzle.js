@@ -130,8 +130,11 @@ export default class PuzzleGame extends MiniGame {
           this.buildPieces()
         }
         this.layoutTray()
+        const allPlacedAtStart = this.pieces.every((p) => p.row !== null)
         const firstWrong = this.pieces.find((p) => !isPieceCorrect(p))
-        this.selectPiece(firstWrong ? firstWrong.id : null)
+        // Pre-select only when the board is already populated (restored save); for a fresh puzzle
+        // no piece is selected until the user places something.
+        this.selectPiece(allPlacedAtStart && firstWrong ? firstWrong.id : null)
         if (isSolved(this.pieces)) {
           // A returning visitor who had already finished it: nothing to show them solving.
           this.finish(false)
@@ -139,6 +142,9 @@ export default class PuzzleGame extends MiniGame {
           // Show rotation feedback immediately if a save was restored with pieces already on the
           // board — without this the visitor would see a "done" board with no signal to rotate.
           this.updateRotationFeedback()
+          if (allPlacedAtStart && firstWrong) {
+            this.nudgeRotateButtons()
+          }
           this.resetHintTimer()
         }
       } catch (e) {
@@ -404,6 +410,7 @@ export default class PuzzleGame extends MiniGame {
   }
 
   drop(pieceId, el) {
+    const wasInTray = this.pieces.find((p) => p.id === pieceId)?.row === null
     const {x, y} = this.centreFraction(el)
     const result = resolveDrop(this.pieces, pieceId, x, y, this.rows, this.cols, this.snapRatio)
     if (result.snapped) {
@@ -425,6 +432,18 @@ export default class PuzzleGame extends MiniGame {
       this.finish(true)
     } else {
       this.updateRotationFeedback()
+      // Only auto-select when the very last piece just landed — that's the "aha" moment.
+      // For any other drop (re-drop of an already-placed piece, a tap to select it), keep
+      // whatever selectPiece(pieceId) set in onDown — overriding it would make the user
+      // unable to choose which piece to rotate.
+      const allNowPlaced = this.pieces.every((p) => p.row !== null)
+      if (wasInTray && allNowPlaced) {
+        const firstWrong = this.pieces.find((p) => !isPieceCorrect(p))
+        if (firstWrong) {
+          this.selectPiece(firstWrong.id)
+          this.nudgeRotateButtons()
+        }
+      }
     }
   }
 
@@ -438,29 +457,28 @@ export default class PuzzleGame extends MiniGame {
       this.finish(true)
     } else {
       this.updateRotationFeedback()
+      // If the piece we just fixed is now correct, advance to the next wrong one so the
+      // user doesn't have to tap again to move on.
+      if (isPieceCorrect(piece)) {
+        const nextWrong = this.pieces.find((p) => !isPieceCorrect(p))
+        this.selectPiece(nextWrong ? nextWrong.id : null)
+        if (nextWrong) {
+          this.nudgeRotateButtons()
+        }
+      }
     }
   }
 
-  // When all pieces are on the board but some have wrong rotation: mark them with a warning border
-  // and auto-select the first one so the turn buttons immediately act on it.
+  nudgeRotateButtons() {
+    this.rotateButtons.forEach((btn) => btn.classList.add('is-nudge'))
+    clearTimeout(this.nudgeTimer)
+    this.nudgeTimer = setTimeout(() => {
+      this.rotateButtons.forEach((btn) => btn.classList.remove('is-nudge'))
+    }, 600)
+  }
+
   updateRotationFeedback() {
-    const allPlaced = this.pieces.every((p) => p.row !== null)
-    this.pieces.forEach((p) => {
-      const el = this.pieceEls[p.id]
-      const inRightSpot = p.row === p.homeRow && p.col === p.homeCol
-      el.classList.toggle('is-needs-rotation', allPlaced && inRightSpot && p.rotation !== 0)
-    })
-    if (allPlaced) {
-      const firstWrong = this.pieces.find((p) => !isPieceCorrect(p))
-      if (firstWrong) {
-        this.selectPiece(firstWrong.id)
-        this.rotateButtons.forEach((btn) => btn.classList.add('is-nudge'))
-        clearTimeout(this.nudgeTimer)
-        this.nudgeTimer = setTimeout(() => {
-          this.rotateButtons.forEach((btn) => btn.classList.remove('is-nudge'))
-        }, 600)
-      }
-    }
+    // No-op — orange "needs rotation" hint removed; gold selection border is enough.
   }
 
   // ---- the 15-second idle hint ----
