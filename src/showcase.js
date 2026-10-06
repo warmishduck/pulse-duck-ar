@@ -28,7 +28,6 @@ const UNLOCK_FALLBACK_MS = 900   // how long to hold before going idle when ther
 const WALL = {width: 1.0, height: 1.1, depth: 0.14, behind: 0.4}
 const WAIT_BEHIND = 0.85
 const WALK_SECONDS = 1.3
-const SINK_DELAY = 0.6       // seconds after the creature is out before its wall starts to sink
 const SINK_SECONDS = 1.4
 const DUST_COLOR = 0xc9b8a0
 
@@ -51,7 +50,7 @@ const shuffled = (array) => {
 // meant to be a glimpse of what is inside, not a copy of the exhibit. `lockStyle` is how a
 // creature still behind its puzzle looks: 'silhouette' (a dark stand-in where it stands) or
 // 'wall' (hidden behind a stone wall; tapping the wall opens the puzzle, and once it is solved
-// the creature walks out through the wall's door).
+// the wall sinks into the floor and the creature walks out).
 export const createShowcase = ({
   placements, glowLight, onProgress = () => {}, puzzlesEnabled = true, lockStyle = 'silhouette',
 }) => {
@@ -344,13 +343,25 @@ export const createShowcase = ({
     }, holdMs)
   }
 
-  // lockStyle 'wall', once the puzzle is won: the creature shows up behind its wall and walks out
-  // through the door, playing its `walkAnim` if it has one; update() moves it, then wake().
+  // lockStyle 'wall', once the puzzle is won: the door flares and the wall shakes, puffs dust and
+  // sinks into the floor, uncovering the creature waiting behind it; update() then has it walk
+  // out (startWalk) and wake.
+  const startSink = (index) => {
+    if (models[index]) {
+      models[index].visible = true   // still behind the wall: the sinking wall uncovers it
+    }
+    const wall = walls[index]
+    const puff = new THREE.Group()
+    puff.position.copy(wall.root.position)
+    wall.root.parent.add(puff)
+    dust[index] = createSparkBurst(puff, {radius: items[index].targetHeight * 0.5, color: DUST_COLOR})
+    playSound('rumble')
+    sinks[index] = 0
+  }
+
+  // The wall is down: the creature walks to its spot, playing its `walkAnim` if it has one.
   const startWalk = (index) => {
     const item = items[index]
-    if (models[index]) {
-      models[index].visible = true
-    }
     const mixer = mixerByIndex[index]
     const clips = clipsByIndex[index]
     const walkClip = item.walkAnim && clips && THREE.AnimationClip.findByName(clips, item.walkAnim)
@@ -362,9 +373,9 @@ export const createShowcase = ({
       if (idleAction) {
         action.crossFadeFrom(idleAction, 0.25, false)
       }
+      playSound('patter')
     }
     walks[index] = {from: groups[index].position.clone(), elapsed: 0, action}
-    playSound('whoosh')
   }
 
   // Takes a wall out of the scene for good: hidden, and no longer caught by taps.
@@ -374,15 +385,14 @@ export const createShowcase = ({
     walls[index].root.visible = false
   }
 
-  // Puts a walking creature on its spot in front of the wall, back in its idle loop.
+  // Puts the creature on its spot, back in its idle loop if it was walking there.
   const endWalk = (index) => {
     const walk = walks[index]
     walks[index] = null
     groups[index].position.x = homes[index].x
     groups[index].position.z = homes[index].z
-    walls[index].setDoorGlow(0)
     const idleAction = reactionStates[index] ? reactionStates[index].idle : null
-    if (walk.action && idleAction) {
+    if (walk && walk.action && idleAction) {
       idleAction.reset().play().crossFadeFrom(walk.action, 0.25, false)
     }
   }
@@ -439,14 +449,14 @@ export const createShowcase = ({
           if (lockState[i] === 'opening') {
             lockState[i] = 'locked'
           } else if (lockState[i] === 'unlocking') {
-            if (walks[i]) {
-              endWalk(i)
+            if (walls[i]) {
+              endWalk(i)   // mid-sink or mid-walk: straight to its spot
             }
             restoreMaterials(i)
             lockState[i] = 'unlocked'
           }
           if (walls[i] && lockState[i] === 'unlocked' && !sunk[i]) {
-            removeWall(i)   // out already: coming back to a wall still standing would be odd
+            removeWall(i)   // solved already: coming back to a wall still standing would be odd
           }
         })
       }
@@ -534,11 +544,12 @@ export const createShowcase = ({
       })
     },
 
-    // Called once a puzzle is won: behind a wall, the creature first walks out; then it wakes.
+    // Called once a puzzle is won: behind a wall, the wall first sinks and the creature walks out;
+    // then it wakes.
     unlock(index) {
       lockState[index] = 'unlocking'
       if (walls[index]) {
-        startWalk(index)
+        startSink(index)
       } else {
         wake(index)
       }
@@ -566,36 +577,22 @@ export const createShowcase = ({
         const eased = progress * progress * (3 - 2 * progress)
         groups[i].position.x = THREE.MathUtils.lerp(walk.from.x, homes[i].x, eased)
         groups[i].position.z = THREE.MathUtils.lerp(walk.from.z, homes[i].z, eased)
-        // The door flares as it opens, then fades while the creature steps through.
-        walls[i].setDoorGlow(progress < 0.2 ? 0.7 + progress * 1.5 : 1 - (progress - 0.2) / 0.8)
         if (progress === 1) {
           endWalk(i)
           wake(i)
-          sinks[i] = -SINK_DELAY
         }
       })
       sinks.forEach((elapsed, i) => {
         if (elapsed === null) {
           return
         }
-        const next = elapsed + dt
-        sinks[i] = next
-        if (next < 0) {
-          return
-        }
-        const wall = walls[i]
-        if (elapsed < 0) {
-          // A puff of dust at its foot as it starts to go.
-          const puff = new THREE.Group()
-          puff.position.copy(wall.root.position)
-          wall.root.parent.add(puff)
-          dust[i] = createSparkBurst(puff, {radius: items[i].targetHeight * 0.5, color: DUST_COLOR})
-          playSound('rumble')
-        }
-        const progress = Math.min(next / SINK_SECONDS, 1)
-        wall.setSunk(progress * progress)   // slow to start, then it drops away
+        sinks[i] = elapsed + dt
+        const progress = Math.min(sinks[i] / SINK_SECONDS, 1)
+        walls[i].setSunk(progress * progress)   // slow to start, then it drops away
+        walls[i].setDoorGlow(1 - progress)      // a flare as it starts, fading on the way down
         if (progress === 1) {
           removeWall(i)
+          startWalk(i)
         }
       })
       dust.forEach((puff) => puff && puff.update(dt))

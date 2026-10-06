@@ -1,6 +1,6 @@
 // A small mossy stone wall with a glowing door outline on its front: where a creature hides until
-// its puzzle is solved, then walks out through, after which the wall sinks into the floor (see
-// showcase.js's lockStyle 'wall'). Built from rounded boxes, so it needs no model file. It stands
+// its puzzle is solved, when the wall sinks into the floor and lets it out (see showcase.js's
+// lockStyle 'wall'). Built from rounded boxes, so it needs no model file. It stands
 // on y = 0, centred on x = 0, front face +z. Whatever goes below the world's floor (y = 0) is cut
 // away, which needs the renderer's localClippingEnabled (threejs-scene-init.js turns it on).
 
