@@ -4,7 +4,7 @@
     {
       "name": "pulse-ar-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5173"],
+      "runtimeArgs": ["run", "serve", "--", "--port", "5173"],
       "port": 5173
     }
   ]
