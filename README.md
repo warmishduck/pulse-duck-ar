@@ -94,26 +94,27 @@ Pushing to `main` builds the site and publishes it to GitHub Pages
 
 ## Self-hosted engine
 
-Camera tracking (world tracking / SLAM, not image targets) comes from the 8th Wall
-**Distributed Engine Binary**. The hosted 8th Wall platform has been shut down; the engine itself
-continues at [8thwall.org](https://8thwall.org). This project vendors it — the files live in
-`public/external/xr/` and are served from this site, not from a CDN — so the site has **no
-third-party dependency at runtime** (important for a museum with patchy Wi-Fi: once the ~8 MB
-engine is cached, it stays working).
+Camera tracking (world tracking / SLAM, plus the image targets of the object scanner) comes from
+the 8th Wall **Distributed Engine Binary**. The hosted 8th Wall platform has been shut down; the
+engine itself continues at [8thwall.org](https://8thwall.org). This project installs it from npm
+(`@8thwall/engine-binary`, `@8thwall/xrextras`, `@8thwall/landing-page`, version `1.0.0`, pinned by
+`package-lock.json`), and `vite-plugin-static-copy` copies each package's scripts and `resources/`
+folder to `external/xr/`: the dev server serves them from memory, the build copies them into `dist/`
+(see `engineFiles` in `vite.config.js`). The files are not in git. They are served from this site,
+not from a CDN, so the site has **no third-party dependency at runtime** (important for a museum
+with patchy Wi-Fi: once the engine scripts, about 7 MB, are cached, it keeps working).
 
-- `xr.js`, `xr-slam.js` (its SLAM chunk, fetched lazily — `xr-face.js` and the face/segmentation
-  `resources/` this project doesn't use were left out), `xrextras.js`, `landing-page.js`, and
-  `resources/` (the fonts/icons/images `xrextras` and `landing-page` draw their UI from — the
-  loading screen, the "open on your phone" QR fallback for desktop, etc). All from npm package
-  version `1.0.0` of `@8thwall/engine-binary`, `@8thwall/xrextras`, `@8thwall/landing-page`.
+- What gets copied: `xr.js`, `xr-slam.js` (the SLAM chunk, fetched lazily), `xrextras.js`,
+  `landing-page.js`, and `resources/` (the fonts/icons/images `xrextras` and `landing-page` draw
+  their UI from — the loading screen, the "open on your phone" QR fallback for desktop, etc). The
+  copy also includes `xr-face.js` and the face resources, which nothing in `src/` uses.
 - **Licence terms** (from the [distributed binary FAQ](https://8thwall.org/docs/migration/faq#distributed-engine-binary-license-and-permitted-use)):
   running/hosting it yourself and distributing it as part of this project is explicitly permitted;
   modifying, reverse-engineering, decompiling or redistributing an altered copy is not; Niantic
   Spatial's copyright notice must stay in the file, and this project must identify Niantic Spatial
   as the engine's creator and reference the licence — this section is that reference. **Never edit
-  the files under `public/external/xr/`.** To update the engine, download a fresh copy of the same
-  files from `https://cdn.jsdelivr.net/npm/@8thwall/<package>@<version>/dist/...` (or
-  `https://data.jsdelivr.com/v1/packages/npm/@8thwall/<package>@<version>` lists a package's exact
-  files) and replace them whole; `.gitattributes` keeps git from rewriting their line endings.
+  the copied engine files.** To update the engine, raise the versions of the three `@8thwall/*`
+  packages in `package.json` and run `npm install`. The licence text ships with each package, as
+  `node_modules/@8thwall/<package>/dist/LICENSE`.
 - Started from 8th Wall's "three.js: World Effects" example.
 - The creature models come from the author's own game project.
