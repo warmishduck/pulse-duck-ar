@@ -4,3 +4,5 @@ tmp
 .DS_Store
 # 8th Wall engine files are copied from node_modules at dev/build time by vite-plugin-static-copy
 public/external/xr
+# Secrets: none are used today (see CLAUDE.md), but a key must never be committed
+.env

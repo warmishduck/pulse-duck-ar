@@ -261,7 +261,7 @@ generate it before the change is committed.
   validate at the boundary, trust inside.
 - **No secrets in source code.** API keys, tokens, or credentials must never be
   committed. No API key or token is used today. If a service ever requires one, it
-  goes in a `.env` file, and `.env` must be added to `.gitignore` first.
+  goes in a `.env` file, which `.gitignore` already excludes.
   (`staff.js` holds the staff password for the puzzle bypass. It ships to every
   visitor's browser, so it is a nuisance guard, not a secret.)
 
