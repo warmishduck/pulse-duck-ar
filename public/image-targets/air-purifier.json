@@ -1,0 +1,23 @@
+{
+  "imagePath": "image-targets/air-purifier_luminance.jpg",
+  "metadata": null,
+  "name": "air-purifier",
+  "type": "PLANAR",
+  "properties": {
+    "left": 0,
+    "top": 0,
+    "width": 1512,
+    "height": 2016,
+    "isRotated": false,
+    "originalWidth": 1512,
+    "originalHeight": 2016
+  },
+  "resources": {
+    "originalImage": "air-purifier_original.jpg",
+    "croppedImage": "air-purifier_cropped.jpg",
+    "thumbnailImage": "air-purifier_thumbnail.jpg",
+    "luminanceImage": "air-purifier_luminance.jpg"
+  },
+  "created": 1792648469807,
+  "updated": 1792648469807
+}

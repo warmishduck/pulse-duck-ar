@@ -1,0 +1,23 @@
+{
+  "imagePath": "image-targets/vacuum-station_luminance.jpg",
+  "metadata": null,
+  "name": "vacuum-station",
+  "type": "PLANAR",
+  "properties": {
+    "left": 0,
+    "top": 0,
+    "width": 1512,
+    "height": 2016,
+    "isRotated": false,
+    "originalWidth": 1512,
+    "originalHeight": 2016
+  },
+  "resources": {
+    "originalImage": "vacuum-station_original.jpg",
+    "croppedImage": "vacuum-station_cropped.jpg",
+    "thumbnailImage": "vacuum-station_thumbnail.jpg",
+    "luminanceImage": "vacuum-station_luminance.jpg"
+  },
+  "created": 1792648473985,
+  "updated": 1792648473985
+}
