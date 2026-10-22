@@ -36,8 +36,13 @@ import {EXHIBITS} from './content/exhibits.js'
 /** The image target (public/image-targets/floor-marker.json) that is laid on the floor. */
 const FLOOR_MARKER = 'floor-marker'
 const MARKER_SCALE = 0.6       // content scale when the marker reports no width (see contentScale)
-const OBJECT_GAP = 0.60        // object mode: how far in front of the exhibit object the creature stands
+const OBJECT_GAP = 0.30        // object mode: how far in front of the object's near face the creature stands
 const OBJECT_EMERGE_SIDE = 0.55 // emerge-from-side offset in metres (right of anchor)
+// ML mode: the visitor aims at the middle of the object, so the camera ray reaches this height
+// above the floor right at the object. Its smooth surface has too few tracked points to measure.
+const OBJECT_CENTRE_HEIGHT = 0.35
+const OBJECT_MIN_DIST = 0.4
+const OBJECT_MAX_DIST = 4
 const OBJECT_SCALE_FALLBACK = 0.5
 
 const GLOW_COLOR = 0xffd98a
@@ -206,8 +211,15 @@ const scanPipelineModule = () => {
       if (state !== 'found' || className !== exhibit.mlTarget) return
       const {camera} = XR8.Threejs.xrScene()
       camera.getWorldDirection(forward)
+      const centreY = currentFloorY(camera) + OBJECT_CENTRE_HEIGHT
+      const fromRay = forward.y < -0.05 && camera.position.y > centreY
+        ? (centreY - camera.position.y) / forward.y
+        : null
       const probePoint = camera.position.clone().addScaledVector(forward, 2.0)
-      const dist = wallDistance(worldPoints, camera.position, probePoint) ?? 1.5
+      const fromPoints = wallDistance(worldPoints, camera.position, probePoint)
+      const raw = Math.min(fromRay ?? Infinity, fromPoints ?? Infinity)
+      const dist = Number.isFinite(raw) ? THREE.MathUtils.clamp(raw, OBJECT_MIN_DIST, OBJECT_MAX_DIST) : 1.5
+      debug?.set('ml dist', `ray=${fromRay?.toFixed(2) ?? '-'} points=${fromPoints?.toFixed(2) ?? '-'}`)
       objectPosition.copy(camera.position).addScaledVector(forward, dist)
       latestObjectDetail = null  // use OBJECT_SCALE_FALLBACK for creature scale
       glow.show({position: objectPosition.clone(), scale: 0.4})
@@ -365,6 +377,11 @@ const scanPipelineModule = () => {
     )
   }
 
+  /** Measured floor if the visitor looked down; else derived from the tracked points; else ~1.2 m below the phone. */
+  const currentFloorY = (camera) => floorSamples.length >= FLOOR_SAMPLES_NEEDED
+    ? median(floorSamples)
+    : (floorHeight(worldPoints.map((p) => p.position.y), camera.position.y) ?? (camera.position.y - 1.2))
+
   /** Object mode: once the exhibit is recognised, anchor the creature right in front of it. */
   const placeOnObject = (camera) => {
     if (tracking && tracking.status !== 'NORMAL') {
@@ -377,13 +394,7 @@ const scanPipelineModule = () => {
     } else {
       toCamera.set(0, 0, 1)
     }
-    // Use measured floor height. If not yet measured (camera wasn't pointed at floor), try to
-    // derive it from the world points that 8th Wall has mapped so far. Last resort: assume the
-    // phone is held ~1.2 m above the floor (camera.position.y − 1.2).
-    const allPointYs = worldPoints.map(p => p.position.y)
-    const floorY = floorSamples.length >= FLOOR_SAMPLES_NEEDED
-      ? median(floorSamples)
-      : (floorHeight(allPointYs, camera.position.y) ?? (camera.position.y - 1.2))
+    const floorY = currentFloorY(camera)
     // Anchor at floor level, a step in front of the object toward the viewer.
     const position = objectPosition.clone()
     position.y = floorY
