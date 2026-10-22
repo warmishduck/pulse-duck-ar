@@ -28,7 +28,13 @@ import {CREATURES} from './creatures.js'
  * @property {Placement[]} creatures
  * @property {string} [game] - A key of GAMES in content/games.js.
  * @property {'game'} [startIn]
- * @property {string} [imageTarget] - Name of the image target that opens this exhibit.
+ * @property {string} [imageTarget] - Name of the image target for the exhibit's description poster.
+ *   When `objectTarget` is also set, scanning this poster shows a "Find the exhibit object" hint;
+ *   otherwise the poster IS the trigger that places the creature (single-target flow).
+ * @property {string} [objectTarget] - Name of a second image target placed on or near the physical
+ *   exhibit object. When set, the creature appears near this target rather than on the floor in
+ *   front of the poster. The visitor scans the poster first, then finds and scans the object.
+ *   Register both JSONs in src/image-targets/index.js.
  */
 
 const at = (id, x = 0, z = -0.2, extra = {}) => ({id, x, z, ...extra})

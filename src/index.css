@@ -212,6 +212,25 @@ body {
   touch-action: none;
 }
 
+.puzzle-skip-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.7);
+  font: inherit;
+  font-size: 13px;
+  touch-action: manipulation;
+  cursor: pointer;
+  z-index: 10;
+}
+.puzzle-skip-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 /* A build failure so bad even the placeholder-art fallback didn't route around it — see
    puzzle.js's showError(). Deliberately loud: this is meant to be read off a phone with no
    devtools attached. */

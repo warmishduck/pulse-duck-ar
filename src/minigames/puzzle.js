@@ -228,6 +228,14 @@ export default class PuzzleGame extends MiniGame {
     this.rotateButtons = [this.makeRotateButton(-1), this.makeRotateButton(1)]
     rotator.append(...this.rotateButtons)
 
+    // Staff-only skip button: visible only when ?staff=1 is in the URL. No password needed —
+    // it's a demo shortcut for the team. Regular visitors never see it.
+    if (new URLSearchParams(location.search).get('staff') === '1') {
+      const skip = make('button', 'puzzle-skip-btn', {type: 'button', textContent: TEXT.puzzleSkip})
+      skip.addEventListener('click', () => this.finish(false))
+      stage.append(skip)
+    }
+
     stage.append(board, tray, rotator, corner)
     this.root.appendChild(stage)
   }

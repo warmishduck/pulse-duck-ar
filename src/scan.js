@@ -33,6 +33,8 @@ import {startXr} from './xr-pipeline'
 /** The image target (public/image-targets/floor-marker.json) that is laid on the floor. */
 const FLOOR_MARKER = 'floor-marker'
 const MARKER_SCALE = 0.6       // content scale when the marker reports no width (see contentScale)
+const OBJECT_GAP = 0.12        // object mode: how far in front of the exhibit surface the creature hovers
+const OBJECT_SCALE_FALLBACK = 0.5
 
 const GLOW_COLOR = 0xffd98a
 const GLOW_SIZE = 1.8          // the halo's diameter, in multiples of the object's size
@@ -169,10 +171,14 @@ const scanPipelineModule = () => {
   let canvas = null
   let exhibitModule = null
   const debug = createDebugPanel()
-  const markerMode = new URLSearchParams(window.location.search).has('marker')
+  const urlParams = new URLSearchParams(window.location.search)
+  const markerMode = urlParams.has('marker')
+  const objectMode = urlParams.has('object')
   let wall = null              // marker flow: the exhibit object's wall plane (marker-anchor.js)
   let markerAt = null          // marker flow: where the floor marker is, a THREE.Vector3
   let markerWidth = 0          // marker flow: its width in world units (detail.scale)
+  let latestObjectDetail = null  // object/two-target mode: last seen detail for the exhibit object
+  let objectFoundSeconds = 0   // two-target mode: seconds since the exhibit object was first seen
 
   const onObjectSeen = ({detail}) => {
     if (markerMode && detail.name === FLOOR_MARKER) {
@@ -180,6 +186,49 @@ const scanPipelineModule = () => {
       return
     }
     debug?.set('seen', `${detail.name} scale=${detail.scale?.toFixed(2)} pos=${detail.position.x.toFixed(2)}, ${detail.position.y.toFixed(2)}, ${detail.position.z.toFixed(2)}`)
+    // After placement: re-anchor if the tracked target moves.
+    // objectMode (single-target URL param) re-anchors on the poster/object target;
+    // two-target flow re-anchors on the exhibit object specifically.
+    if (state === 'placed') {
+      const isAnchorTarget = objectMode
+        ? detail.name === foundName
+        : exhibit?.objectTarget && detail.name === exhibit.objectTarget
+      if (isAnchorTarget) {
+        const {camera} = XR8.Threejs.xrScene()
+        const pos = new THREE.Vector3(detail.position.x, detail.position.y, detail.position.z)
+        const distance = wallDistance(worldPoints, camera.position, detail.position)
+        if (distance !== null) {
+          pos.sub(camera.position).setLength(distance).add(camera.position)
+        }
+        const toCamera = new THREE.Vector3(camera.position.x - pos.x, 0, camera.position.z - pos.z)
+        if (toCamera.lengthSq() > 1e-8) {
+          toCamera.normalize()
+        }
+        exhibitModule.moveAnchor(pos.addScaledVector(toCamera, OBJECT_GAP))
+      }
+      return
+    }
+
+    // Two-target flow: the exhibit object itself (second target — mortar, clock, etc.) found.
+    // Fires when the poster was already scanned and the exhibit declares an objectTarget.
+    if ((state === 'found' || state === 'found_object') && exhibit?.objectTarget && detail.name === exhibit.objectTarget) {
+      if (state !== 'found_object') {
+        state = 'found_object'
+        objectFoundSeconds = 0
+      }
+      const {camera} = XR8.Threejs.xrScene()
+      objectPosition.copy(detail.position)
+      const distance = wallDistance(worldPoints, camera.position, detail.position)
+      if (distance !== null) {
+        objectPosition.sub(camera.position).setLength(distance).add(camera.position)
+      }
+      latestObjectDetail = detail
+      debug?.set('object', `scale=${detail.scale?.toFixed(2)} pos=${objectPosition.x.toFixed(2)},${objectPosition.y.toFixed(2)},${objectPosition.z.toFixed(2)}`)
+      glow.show(detail)
+      return
+    }
+
+    // Poster (first target) found: identify the exhibit and set the next instruction.
     if (state === 'searching') {
       const match = routeFromImageTarget(detail.name)
       if (!match) {
@@ -188,11 +237,17 @@ const scanPipelineModule = () => {
       state = 'found'
       foundName = detail.name
       exhibit = match.exhibit
-      hint.setText(markerMode ? TEXT.scanMarker : TEXT.scanFloor)
+      foundSeconds = 0
+      if (exhibit.objectTarget) {
+        hint.setText(TEXT.scanFindObject)
+      } else if (!objectMode) {
+        hint.setText(markerMode ? TEXT.scanMarker : TEXT.scanFloor)
+      }
     }
-    if (state === 'found' && detail.name === foundName) {
-      objectPosition.copy(detail.position)   // detail.position is a plain {x, y, z}
-      // The way to the object is right, how far it is is not: take that from the points on it.
+
+    // Single-target flows (no objectTarget): track the poster position for floor-spot / marker / objectMode.
+    if (state === 'found' && detail.name === foundName && !exhibit?.objectTarget) {
+      objectPosition.copy(detail.position)
       const {camera} = XR8.Threejs.xrScene()
       const reported = objectPosition.distanceTo(camera.position)
       const distance = wallDistance(worldPoints, camera.position, objectPosition)
@@ -202,6 +257,9 @@ const scanPipelineModule = () => {
       if (markerMode) {
         wall = wallPlane(camera.position, objectPosition, detail.rotation)
         debug?.set('wall plane normal', wall.normal)
+      }
+      if (objectMode) {
+        latestObjectDetail = detail
       }
       debug?.set('wall', `${distance === null ? 'no points there' : `${distance.toFixed(2)} from points`}; image target says ${reported.toFixed(2)}`)
       glow.show(detail)
@@ -264,6 +322,25 @@ const scanPipelineModule = () => {
       {position: markerAt.clone(), yaw, scale},
       {puzzlesEnabled: false, emergeFrom: emergeStart(markerAt, wall, reach)}
     )
+  }
+
+  /** Object mode: once the exhibit is recognised, anchor the creature right in front of it. */
+  const placeOnObject = (camera) => {
+    if (tracking && tracking.status !== 'NORMAL') {
+      hint.setText(TEXT.scanMove)
+      return
+    }
+    const toCamera = new THREE.Vector3(camera.position.x - objectPosition.x, 0, camera.position.z - objectPosition.z)
+    if (toCamera.lengthSq() > 1e-8) {
+      toCamera.normalize()
+    } else {
+      toCamera.set(0, 0, 1)
+    }
+    const position = objectPosition.clone().addScaledVector(toCamera, OBJECT_GAP)
+    const yaw = yawToward(position, camera.position)
+    const scale = contentScale(latestObjectDetail?.scale, tallestCreature(exhibit), OBJECT_SCALE_FALLBACK)
+    debug?.set('object anchor', `pos=${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)} scale=${scale.toFixed(3)}`)
+    placeExhibit({position, yaw, scale})
   }
 
   const onTrackingStatus = ({detail}) => {
@@ -351,15 +428,34 @@ const scanPipelineModule = () => {
         exhibitModule.onUpdate()
         return
       }
+      // Two-target flow: exhibit object was found; wait MIN_GLOW_SECONDS then place the creature.
+      if (state === 'found_object') {
+        objectFoundSeconds += dt
+        debug?.set('state', `found_object ${objectFoundSeconds.toFixed(1)}s`)
+        if (objectFoundSeconds < MIN_GLOW_SECONDS) {
+          return
+        }
+        const {camera} = XR8.Threejs.xrScene()
+        placeOnObject(camera)
+        return
+      }
       if (state === 'found') {
         foundSeconds += dt
         debug?.set('state', `${state} ${foundSeconds.toFixed(1)}s`)
+        // Two-target flow: poster found, waiting for the visitor to point at the exhibit object.
+        if (exhibit?.objectTarget) {
+          return
+        }
         if (foundSeconds < MIN_GLOW_SECONDS) {
           return
         }
         const {camera} = XR8.Threejs.xrScene()
         if (markerMode) {
           placeOnMarker(camera)
+          return
+        }
+        if (objectMode) {
+          placeOnObject(camera)
           return
         }
         camera.getWorldDirection(forward)
