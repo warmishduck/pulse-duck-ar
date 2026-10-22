@@ -43,6 +43,7 @@ export const STRINGS = {
     scanMove: 'Hold on, the camera is getting its bearings. Move the phone slowly from side to side',
     scanMarker: 'Found it! Now point the camera at the marker on the floor',
     scanFindObject: 'Found it! Now find the exhibit object and point the camera at it',
+    scanFloorFirst: 'Point the camera briefly at the floor, then look up at the exhibit',
     puzzleSkip: 'Skip puzzle',
   },
   fi: {
@@ -80,6 +81,7 @@ export const STRINGS = {
     scanMove: 'Hetki, kamera hahmottaa tilaa. Liikuta puhelinta hitaasti sivulta toiselle',
     scanMarker: 'Löytyi! Osoita nyt kameralla lattialla olevaa merkkiä',
     scanFindObject: 'Löytyi! Etsi nyt esine ja osoita kamera sitä kohti',
+    scanFloorFirst: 'Osoita kamera hetkeksi lattiaan, sitten nosta se kohti esinettä',
     puzzleSkip: 'Ohita palapeli',
   },
   sv: {
@@ -117,6 +119,7 @@ export const STRINGS = {
     scanMove: 'Vänta, kameran orienterar sig. Flytta telefonen långsamt från sida till sida',
     scanMarker: 'Hittad! Rikta nu kameran mot markören på golvet',
     scanFindObject: 'Hittad! Hitta nu föremålet och rikta kameran mot det',
+    scanFloorFirst: 'Rikta kameran kort mot golvet, lyft sedan mot föremålet',
     puzzleSkip: 'Hoppa över pusslet',
   },
   uk: {
@@ -154,6 +157,7 @@ export const STRINGS = {
     scanMove: 'Зачекай, камера орієнтується. Повільно поводь телефоном з боку в бік',
     scanMarker: 'Знайдено! Тепер наведи камеру на маркер на підлозі',
     scanFindObject: 'Знайдено! Тепер знайди предмет і наведи на нього камеру',
+    scanFloorFirst: 'Наведи камеру на підлогу на секунду, потім підніми до предмета',
     puzzleSkip: 'Пропустити пазл',
   },
 }

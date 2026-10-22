@@ -469,7 +469,7 @@ const scanPipelineModule = () => {
       const {scene, camera} = XR8.Threejs.xrScene()
       placeCameraAtStart(camera)
       glow = createObjectGlow(scene)
-      hint = createHint(TEXT.scanHint)
+      hint = createHint(TEXT.scanFloorFirst)
       debug?.set('state', state)
     },
 
@@ -486,6 +486,20 @@ const scanPipelineModule = () => {
       if (state === 'placed') {
         exhibitModule.onUpdate()
         return
+      }
+      // Floor calibration: collect samples while still searching. Shows a hint until the floor
+      // is measured, then switches to the normal scan hint.
+      if (state === 'searching') {
+        const {camera} = XR8.Threejs.xrScene()
+        camera.getWorldDirection(forward)
+        if (forward.y < FLOOR_PITCH) {
+          measureFloor(camera.position.y, dt)
+        }
+        if (floorSamples.length < FLOOR_SAMPLES_NEEDED) {
+          hint.setText(TEXT.scanFloorFirst)
+        } else {
+          hint.setText(TEXT.scanHint)
+        }
       }
       // Two-target flow: exhibit object was found; wait MIN_GLOW_SECONDS then place the creature.
       if (state === 'found_object') {
