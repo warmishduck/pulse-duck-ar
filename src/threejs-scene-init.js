@@ -140,9 +140,9 @@ export const initScenePipelineModule = (exhibit, {anchor = null, puzzlesEnabled 
       stage.add(level.root)
     }
 
-    shadowFloor = addShadowFloor(scene)
-    if (anchor) {
-      shadowFloor.position.y = anchor.position.y   // the scanner's floor is measured, not always y = 0
+    // The scanner's floor is only estimated, and a shadow on a wrong floor gives that away.
+    if (!anchor) {
+      shadowFloor = addShadowFloor(scene)
     }
 
     if (!anchor) {
