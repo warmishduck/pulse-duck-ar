@@ -34,18 +34,21 @@ export const loadModel = async (modelUrl) => {
 }
 
 /**
- * Run inference on glCanvas every intervalMs.
+ * Run inference on the camera feed every intervalMs.
+ * Prefers the raw <video> element that 8th Wall injects (avoids the preserveDrawingBuffer
+ * issue where reading a WebGL canvas outside the render frame produces a black image).
+ * Falls back to glCanvas when no video element is found.
  * Calls onDetect(className, confidence) when a non-background class exceeds the threshold.
  * Returns a stop function — call it to cancel the detection loop.
  *
- * @param {HTMLCanvasElement} glCanvas - The WebGL renderer canvas (camera feed + AR overlay).
+ * @param {HTMLCanvasElement} glCanvas - The WebGL renderer canvas (used as fallback source).
  * @param {(className: string, confidence: number) => void} onDetect
  * @param {{intervalMs?: number, threshold?: number, backgroundClass?: string}} options
  * @returns {() => void} stop
  */
 export const startDetection = (glCanvas, onDetect, {
   intervalMs = 700,
-  threshold = 0.80,
+  threshold = 0.60,
   backgroundClass = 'background',
 } = {}) => {
   if (!model) throw new Error('Call loadModel() first')
@@ -54,14 +57,17 @@ export const startDetection = (glCanvas, onDetect, {
   const tick = async () => {
     if (!active) return
     try {
-      offCtx.drawImage(glCanvas, 0, 0, INPUT_SIZE, INPUT_SIZE)
+      // 8th Wall injects a <video> element for the raw camera stream; use it so we get a
+      // live frame rather than reading a WebGL canvas that may have an empty drawing buffer.
+      const source = document.querySelector('video') ?? glCanvas
+      offCtx.drawImage(source, 0, 0, INPUT_SIZE, INPUT_SIZE)
       const predictions = await model.predict(offscreen)
       const best = predictions.reduce((a, b) => a.probability > b.probability ? a : b)
       if (best.className !== backgroundClass && best.probability >= threshold) {
         onDetect(best.className, best.probability)
       }
     } catch (_) {
-      // WebGL canvas not ready or context lost — skip this frame
+      // Source not ready or context lost — skip this frame
     }
     if (active) setTimeout(tick, intervalMs)
   }
