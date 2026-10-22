@@ -37,6 +37,7 @@ import {EXHIBITS} from './content/exhibits.js'
 const FLOOR_MARKER = 'floor-marker'
 const MARKER_SCALE = 0.6       // content scale when the marker reports no width (see contentScale)
 const OBJECT_GAP = 0.12        // object mode: how far in front of the exhibit surface the creature hovers
+const OBJECT_DIAMETER_ESTIMATE = 0.6  // estimated exhibit object diameter for emerge-from-behind arc
 const OBJECT_SCALE_FALLBACK = 0.5
 
 const GLOW_COLOR = 0xffd98a
@@ -390,15 +391,15 @@ const scanPipelineModule = () => {
     const yaw = yawToward(position, camera.position)
     const scale = contentScale(latestObjectDetail?.scale, tallestCreature(exhibit), OBJECT_SCALE_FALLBACK)
     debug?.set('object anchor', `pos=${position.x.toFixed(2)},${floorY.toFixed(2)},${position.z.toFixed(2)} scale=${scale.toFixed(3)} camY=${camera.position.y.toFixed(2)}`)
-    // Invisible wall sits at the object face; creature starts BEHIND the object (opposite side
-    // from the viewer) and walks around to the anchor in front, creating the emerge effect.
-    const wallPoint = objectPosition.clone()
-    wallPoint.y = floorY
-    wall = {point: wallPoint, normal: toCamera.clone()}
-    const {scene} = XR8.Threejs.xrScene()
-    addWallOccluder(scene)
-    const reach = tallestCreature(exhibit) * scale
-    placeExhibit({position, yaw, scale}, {puzzlesEnabled: false, emergeFrom: emergeStart(position, wall, reach)})
+    // Emerge from the back-side of the object, offset to one side so the creature walks AROUND
+    // the object's edge rather than through it. The physical object in the video is the natural
+    // occluder — no synthetic plane needed.
+    const right = new THREE.Vector3(-toCamera.z, 0, toCamera.x) // 90° CW rotation in XZ plane
+    const emergeFrom = objectPosition.clone()
+    emergeFrom.y = floorY
+    emergeFrom.addScaledVector(toCamera, -OBJECT_DIAMETER_ESTIMATE)     // behind the object
+    emergeFrom.addScaledVector(right, OBJECT_DIAMETER_ESTIMATE * 0.6)  // offset to the right
+    placeExhibit({position, yaw, scale}, {puzzlesEnabled: false, emergeFrom})
   }
 
   const onTrackingStatus = ({detail}) => {
