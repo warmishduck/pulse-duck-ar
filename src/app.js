@@ -12,7 +12,9 @@ import * as THREE from 'three';
 
 window.THREE = THREE
 
-const route = resolveRoute(window.location.search)
+// /?scan takes precedence even when ?c= is also present (scanner with pre-selected exhibit).
+const params = new URLSearchParams(window.location.search)
+const route = params.has('scan') ? {kind: 'scan'} : resolveRoute(window.location.search)
 if (route.kind === 'exhibit') {
   startXr(initScenePipelineModule(route.exhibit))
 } else if (route.kind === 'scan' && canScan) {

@@ -31,6 +31,7 @@ import {createSparkBurst} from './spark'
 import {startXr} from './xr-pipeline'
 import {loadModel, startDetection} from './ml/object-detector.js'
 import {OBJECT_MODEL_URL} from './ml/model-config.js'
+import {EXHIBITS} from './content/exhibits.js'
 
 /** The image target (public/image-targets/floor-marker.json) that is laid on the floor. */
 const FLOOR_MARKER = 'floor-marker'
@@ -176,6 +177,11 @@ const scanPipelineModule = () => {
   const urlParams = new URLSearchParams(window.location.search)
   const markerMode = urlParams.has('marker')
   const objectMode = urlParams.has('object')
+  // /?scan&c=<code> pre-selects an exhibit so the scanner uses its imageTarget as the poster trigger.
+  const preloadedCode = urlParams.get('c')?.trim().toLowerCase() ?? null
+  if (preloadedCode && Object.hasOwn(EXHIBITS, preloadedCode)) {
+    exhibit = EXHIBITS[preloadedCode]
+  }
   let wall = null              // marker flow: the exhibit object's wall plane (marker-anchor.js)
   let markerAt = null          // marker flow: where the floor marker is, a THREE.Vector3
   let markerWidth = 0          // marker flow: its width in world units (detail.scale)
@@ -260,7 +266,10 @@ const scanPipelineModule = () => {
 
     // Poster (first target) found: identify the exhibit and set the next instruction.
     if (state === 'searching') {
-      const match = routeFromImageTarget(detail.name)
+      // If an exhibit was pre-loaded via ?scan&c=<code>, use it when its imageTarget matches;
+      // otherwise fall back to the first exhibit whose imageTarget matches the detected target.
+      const preloaded = exhibit && exhibit.imageTarget === detail.name
+      const match = preloaded ? {code: preloadedCode, exhibit} : routeFromImageTarget(detail.name)
       if (!match) {
         return
       }
