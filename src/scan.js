@@ -376,12 +376,20 @@ const scanPipelineModule = () => {
     } else {
       toCamera.set(0, 0, 1)
     }
-    const position = objectPosition.clone().addScaledVector(toCamera, OBJECT_GAP)
+    // Use measured floor height; fall back to 0 (8th Wall's assumption) if not yet measured.
+    const floorY = floorSamples.length >= FLOOR_SAMPLES_NEEDED ? median(floorSamples) : 0
+    // Anchor at floor level, a step in front of the object toward the viewer.
+    const position = objectPosition.clone()
+    position.y = floorY
+    position.addScaledVector(toCamera, OBJECT_GAP)
     const yaw = yawToward(position, camera.position)
     const scale = contentScale(latestObjectDetail?.scale, tallestCreature(exhibit), OBJECT_SCALE_FALLBACK)
-    debug?.set('object anchor', `pos=${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)} scale=${scale.toFixed(3)}`)
-    // Place an invisible wall at the exhibit object so the creature walks out from behind it.
-    wall = {point: objectPosition.clone(), normal: toCamera.clone()}
+    debug?.set('object anchor', `pos=${position.x.toFixed(2)},${floorY.toFixed(2)},${position.z.toFixed(2)} scale=${scale.toFixed(3)}`)
+    // Invisible wall sits at the object face; creature starts BEHIND the object (opposite side
+    // from the viewer) and walks around to the anchor in front, creating the emerge effect.
+    const wallPoint = objectPosition.clone()
+    wallPoint.y = floorY
+    wall = {point: wallPoint, normal: toCamera.clone()}
     const {scene} = XR8.Threejs.xrScene()
     addWallOccluder(scene)
     const reach = tallestCreature(exhibit) * scale

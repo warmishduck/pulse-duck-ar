@@ -60,8 +60,8 @@ export const EXHIBITS = {
   'office-cats': {creatures: [alone('glowcap')], imageTarget: 'cats-painting'},
   'office-clock': {creatures: [alone('acorn')], imageTarget: 'wood-clock'},
   // ML recognition test: cats painting → ML model detects the physical object from any angle.
-  'test-purifier': {creatures: [alone('pinecone')], imageTarget: 'cats-painting', mlTarget: 'air-purifier'},
-  'test-vacuum': {creatures: [alone('glowcap')], imageTarget: 'cats-painting', mlTarget: 'vacuum-station'},
+  'test-purifier': {creatures: [at('pinecone')], imageTarget: 'cats-painting', mlTarget: 'air-purifier'},
+  'test-vacuum': {creatures: [at('glowcap')], imageTarget: 'cats-painting', mlTarget: 'vacuum-station'},
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
   // The yard game, open whenever the museum is closed: no creatures, straight into the game.
