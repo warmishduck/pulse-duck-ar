@@ -29,6 +29,8 @@ import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
 import {startXr} from './xr-pipeline'
+import {loadModel, startDetection} from './ml/object-detector.js'
+import {OBJECT_MODEL_URL} from './ml/model-config.js'
 
 /** The image target (public/image-targets/floor-marker.json) that is laid on the floor. */
 const FLOOR_MARKER = 'floor-marker'
@@ -179,6 +181,34 @@ const scanPipelineModule = () => {
   let markerWidth = 0          // marker flow: its width in world units (detail.scale)
   let latestObjectDetail = null  // object/two-target mode: last seen detail for the exhibit object
   let objectFoundSeconds = 0   // two-target mode: seconds since the exhibit object was first seen
+  let mlDetectorStop = null    // ML detection: cancel function returned by startDetection, or null
+
+  // Starts the ML detection loop after the poster is recognised and exhibit.mlTarget is set.
+  // Loads the model on demand (async, ~2-4 s); re-guards if the state changed while loading.
+  const startMlDetection = async () => {
+    if (mlDetectorStop || !exhibit?.mlTarget) return
+    try {
+      await loadModel(OBJECT_MODEL_URL)
+    } catch (e) {
+      debug?.set('ml', `model load failed: ${e.message}`)
+      return
+    }
+    if (state !== 'found' || !exhibit?.mlTarget) return
+    const {renderer} = XR8.Threejs.xrScene()
+    mlDetectorStop = startDetection(renderer.domElement, (className, confidence) => {
+      if (state !== 'found' || className !== exhibit.mlTarget) return
+      const {camera} = XR8.Threejs.xrScene()
+      camera.getWorldDirection(forward)
+      const probePoint = camera.position.clone().addScaledVector(forward, 2.0)
+      const dist = wallDistance(worldPoints, camera.position, probePoint) ?? 1.5
+      objectPosition.copy(camera.position).addScaledVector(forward, dist)
+      latestObjectDetail = null  // use OBJECT_SCALE_FALLBACK for creature scale
+      glow.show({position: objectPosition.clone(), scale: 0.4})
+      state = 'found_object'
+      objectFoundSeconds = 0
+      debug?.set('ml', `${className} ${(confidence * 100).toFixed(0)}% dist=${dist.toFixed(2)}`)
+    })
+  }
 
   const onObjectSeen = ({detail}) => {
     if (markerMode && detail.name === FLOOR_MARKER) {
@@ -238,8 +268,9 @@ const scanPipelineModule = () => {
       foundName = detail.name
       exhibit = match.exhibit
       foundSeconds = 0
-      if (exhibit.objectTarget) {
+      if (exhibit.objectTarget || exhibit.mlTarget) {
         hint.setText(TEXT.scanFindObject)
+        if (exhibit.mlTarget) startMlDetection()
       } else if (!objectMode) {
         hint.setText(markerMode ? TEXT.scanMarker : TEXT.scanFloor)
       }
@@ -381,6 +412,7 @@ const scanPipelineModule = () => {
   }
 
   const placeExhibit = (anchor, options = {}) => {
+    if (mlDetectorStop) { mlDetectorStop(); mlDetectorStop = null }
     state = 'placed'
     debug?.set('state', state)
     debug?.set('anchor', anchor.position)
@@ -442,8 +474,8 @@ const scanPipelineModule = () => {
       if (state === 'found') {
         foundSeconds += dt
         debug?.set('state', `${state} ${foundSeconds.toFixed(1)}s`)
-        // Two-target flow: poster found, waiting for the visitor to point at the exhibit object.
-        if (exhibit?.objectTarget) {
+        // Two-target or ML flow: poster found, waiting for the visitor to point at the exhibit object.
+        if (exhibit?.objectTarget || exhibit?.mlTarget) {
           return
         }
         if (foundSeconds < MIN_GLOW_SECONDS) {

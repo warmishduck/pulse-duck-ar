@@ -59,9 +59,9 @@ export const EXHIBITS = {
   'office-painting': {creatures: [alone('pinecone')], imageTarget: 'abstract-painting'},
   'office-cats': {creatures: [alone('glowcap')], imageTarget: 'cats-painting'},
   'office-clock': {creatures: [alone('acorn')], imageTarget: 'wood-clock'},
-  // Two-target test: cats painting → physical object. Used to test the objectTarget flow at home.
-  'test-purifier': {creatures: [alone('glowcap')], imageTarget: 'cats-painting', objectTarget: 'air-purifier'},
-  'test-vacuum': {creatures: [alone('acorn')], imageTarget: 'cats-painting', objectTarget: 'vacuum-station'},
+  // ML recognition test: cats painting → ML model detects the physical object from any angle.
+  'test-purifier': {creatures: [alone('glowcap')], imageTarget: 'cats-painting', mlTarget: 'air-purifier'},
+  'test-vacuum': {creatures: [alone('acorn')], imageTarget: 'cats-painting', mlTarget: 'vacuum-station'},
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
   // The yard game, open whenever the museum is closed: no creatures, straight into the game.
