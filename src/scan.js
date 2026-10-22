@@ -380,7 +380,12 @@ const scanPipelineModule = () => {
     const yaw = yawToward(position, camera.position)
     const scale = contentScale(latestObjectDetail?.scale, tallestCreature(exhibit), OBJECT_SCALE_FALLBACK)
     debug?.set('object anchor', `pos=${position.x.toFixed(2)},${position.y.toFixed(2)},${position.z.toFixed(2)} scale=${scale.toFixed(3)}`)
-    placeExhibit({position, yaw, scale})
+    // Place an invisible wall at the exhibit object so the creature walks out from behind it.
+    wall = {point: objectPosition.clone(), normal: toCamera.clone()}
+    const {scene} = XR8.Threejs.xrScene()
+    addWallOccluder(scene)
+    const reach = tallestCreature(exhibit) * scale
+    placeExhibit({position, yaw, scale}, {puzzlesEnabled: false, emergeFrom: emergeStart(position, wall, reach)})
   }
 
   const onTrackingStatus = ({detail}) => {
