@@ -11,10 +11,10 @@ export const createDebugPanel = () => {
     return null
   }
   const panel = document.createElement('pre')
-  // See-through, so the AR view behind it stays visible; the dark outline keeps the text readable
+  // No background, so the AR view behind it stays visible; the dark outline keeps the text readable
   // over a bright scene.
   panel.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0px);left:0;right:0;z-index:100;margin:0;' +
-    'padding:6px 8px;background:rgba(0,0,0,0.15);color:rgba(170,255,170,0.8);' +
+    'padding:6px 8px;background:none;color:rgba(170,255,170,0.8);' +
     'text-shadow:0 0 2px rgba(0,0,0,0.9),0 0 1px #000;font:11px/1.35 ui-monospace,Menlo,monospace;' +
     'white-space:pre-wrap;pointer-events:none'
   document.body.appendChild(panel)
