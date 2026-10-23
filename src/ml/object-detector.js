@@ -60,7 +60,12 @@ export const startDetection = (glCanvas, onDetect, {
       // 8th Wall injects a <video> element for the raw camera stream; use it so we get a
       // live frame rather than reading a WebGL canvas that may have an empty drawing buffer.
       const source = document.querySelector('video') ?? glCanvas
-      offCtx.drawImage(source, 0, 0, INPUT_SIZE, INPUT_SIZE)
+      // Teachable Machine trains on square crops of the middle of the frame; squashing the whole
+      // portrait frame into a square instead would distort the object it has to recognise.
+      const width = source.videoWidth || source.width
+      const height = source.videoHeight || source.height
+      const side = Math.min(width, height)
+      offCtx.drawImage(source, (width - side) / 2, (height - side) / 2, side, side, 0, 0, INPUT_SIZE, INPUT_SIZE)
       const predictions = await model.predict(offscreen)
       const best = predictions.reduce((a, b) => a.probability > b.probability ? a : b)
       if (best.className !== backgroundClass && best.probability >= threshold) {
