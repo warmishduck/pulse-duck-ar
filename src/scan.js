@@ -30,7 +30,7 @@ import {FLOOR_PITCH, floorHeight, floorSpot, median, wallDistance} from './floor
 import {
   MARKER_SEARCH_ANGLE, MIN_MARKER_POINTS, contentScale, emergeStart, markerPosition, wallPlane, yawToward,
 } from './marker-anchor'
-import {walkAroundObject} from './object-path'
+import {fitCylinderCentre, walkAroundObject} from './object-path'
 import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
@@ -60,6 +60,8 @@ const UNITS_PER_METRE_RANGE = 2
 const POSTER_MAX_DIST = 6
 const POSTER_DISTANCE_AGREEMENT = 0.3
 const POSTER_READINGS_KEPT = 15
+/** ?debug, ML mode: seconds between two fits of the object to its tracked points. */
+const POINTS_FIT_SECONDS = 1
 /** ML mode: room between the object's surface and the creature's centre, in creature heights. */
 const OBJECT_CLEARANCE_SHARE = 0.5
 
@@ -220,6 +222,7 @@ const scanPipelineModule = () => {
   let posterScale = 0          // ML mode: the poster's width (median of sound detail.scale readings), scene units
   const posterScales = []      // ML mode: the latest sound readings of it
   let pendingTap = null        // ML mode: where the visitor tapped before the object was recognised
+  let pointsFit = null         // ?debug, ML mode: the object as its tracked points place it (updatePointsFit)
   let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
   let worldJumps = 0
   const trackingLog = []       // ?debug: the latest changes of tracking status
@@ -512,9 +515,44 @@ const scanPipelineModule = () => {
     })
     const {scene} = XR8.Threejs.xrScene()
     addObjectOccluder(scene, centre, size)
+    if (debug) {
+      pointsFit = {
+        guess: centre, floorY, size, secondsSince: POINTS_FIT_SECONDS,
+        mesh: new THREE.Mesh(
+          new THREE.CylinderGeometry(size.radius, size.radius, size.height, 32),
+          new THREE.MeshBasicMaterial({color: 0xff44cc, wireframe: true})
+        ),
+      }
+      pointsFit.mesh.visible = false
+      scene.add(pointsFit.mesh)
+    }
     const yaw = yawToward(anchor, camera.position)
     debug?.set('object anchor', `centre=${centre.x.toFixed(2)},${floorY.toFixed(2)},${centre.z.toFixed(2)} r=${size.radius.toFixed(2)} h=${size.height.toFixed(2)} anchor=${anchor.x.toFixed(2)},${anchor.z.toFixed(2)} camY=${camera.position.y.toFixed(2)}`)
     placeExhibit({position: anchor, yaw, scale}, {puzzlesEnabled: false, emergeFrom: waypoints})
+  }
+
+  /**
+   * ?debug, ML mode: where the object's tracked points say it stands, drawn as a magenta wireframe
+   * beside the cyan one from the tap, to see on the phone whether snapping to the points would
+   * place it better. Placement itself still uses the tap.
+   */
+  const updatePointsFit = (dt) => {
+    pointsFit.secondsSince += dt
+    if (pointsFit.secondsSince < POINTS_FIT_SECONDS) {
+      return
+    }
+    pointsFit.secondsSince = 0
+    const {guess, floorY, size, mesh} = pointsFit
+    const {camera} = XR8.Threejs.xrScene()
+    const fit = fitCylinderCentre(worldPoints, guess, {floorY, ...size, viewer: camera.position})
+    mesh.visible = !!fit
+    if (!fit) {
+      debug.set('points fit', 'too few points on the object')
+      return
+    }
+    mesh.position.set(fit.centre.x, floorY + size.height / 2, fit.centre.z)
+    const shift = Math.hypot(fit.centre.x - guess.x, fit.centre.z - guess.z)
+    debug.set('points fit', `${fit.count} points, ${((shift / unitsPerMetre()) * 100).toFixed(0)} cm from the tap`)
   }
 
   /** Object mode: once the exhibit is recognised, anchor the creature right in front of it. */
@@ -656,6 +694,9 @@ const scanPipelineModule = () => {
       }
       if (state === 'placed') {
         exhibitModule.onUpdate()
+        if (pointsFit) {
+          updatePointsFit(dt)
+        }
         return
       }
       // Floor calibration: collect samples while still searching. Shows a hint until the floor

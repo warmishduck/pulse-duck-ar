@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import {END_ANGLE, walkAroundObject} from '../src/object-path.js'
+import {END_ANGLE, MIN_FIT_POINTS, fitCylinderCentre, walkAroundObject} from '../src/object-path.js'
 
 let failures = 0
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); if (!ok) failures++ }
@@ -31,6 +31,35 @@ const sideways = walkAroundObject(nearFace, new THREE.Vector3(3, 1.5, 0), {floor
 check('a camera off to the side: the walk ends towards it', sideways.anchor.x > walk.centre.x && near(sideways.centre.x, -radius))
 const above = walkAroundObject(nearFace, new THREE.Vector3(0, 2, 0), {floorY: 0, radius, clearance})
 check('a camera straight above: still a walk, no NaN', [...above.waypoints, above.anchor].every((point) => Number.isFinite(point.x + point.z)))
+
+// ---------------------------------------------------------------- fitting the object from tracked points
+// A cylinder of radius 0.28 and height 1.04 at (-2.1, 6.86), seen from +z: points on its near half,
+// a little noisy (a fixed pseudo-random sequence), and some floor points that must be ignored.
+const truth = {x: -2.1, z: 6.86}
+const size = {floorY: 0.01, radius: 0.28, height: 1.04, viewer: {x: -1.8, z: 8.2}}
+let seed = 1
+const noise = (amount) => { seed = (seed * 16807) % 2147483647; return ((seed / 2147483647) - 0.5) * 2 * amount }
+const side = Array.from({length: 24}, (_, i) => {
+  const angle = -Math.PI / 2 + (i / 23) * Math.PI   // the half facing +z
+  return {position: {x: truth.x + Math.sin(angle) * 0.28 + noise(0.02), y: 0.2 + (i % 6) * 0.15, z: truth.z + Math.cos(angle) * 0.28 + noise(0.02)}}
+})
+const floorPts = Array.from({length: 20}, (_, i) => ({position: {x: truth.x + noise(0.5), y: 0.01 + noise(0.01), z: truth.z + 0.4 + noise(0.3)}}))
+const guess = {x: truth.x + 0.12, z: truth.z - 0.08}   // the tap, ~14 cm off at 2.12 units/m
+const fit = fitCylinderCentre([...side, ...floorPts], guess, size)
+check('the fit finds the centre from the side points', fit && Math.hypot(fit.centre.x - truth.x, fit.centre.z - truth.z) < 0.03,
+  fit ? `off by ${Math.hypot(fit.centre.x - truth.x, fit.centre.z - truth.z).toFixed(3)}` : 'no fit')
+check('floor points are not counted', fit?.count === side.length)
+check('the centre is on the floor', near(fit?.centre.y, size.floorY))
+const wall = Array.from({length: 4}, (_, i) => ({position: {x: truth.x - 0.4 + i * 0.1, y: 0.5, z: truth.z - 0.45}}))
+const withWall = fitCylinderCentre([...side, ...wall], guess, size)
+check('a few wall points nearby shift it only a little', withWall && Math.hypot(withWall.centre.x - truth.x, withWall.centre.z - truth.z) < 0.08,
+  withWall ? `off by ${Math.hypot(withWall.centre.x - truth.x, withWall.centre.z - truth.z).toFixed(3)}` : 'no fit')
+check('too few points: no fit', fitCylinderCentre(side.slice(0, MIN_FIT_POINTS - 1), guess, size) === null)
+const farGuess = {x: truth.x + 0.5, z: truth.z + 0.05}   // a tap about 24 cm off, to the side
+const farFit = fitCylinderCentre(side, farGuess, size)
+check('a tap a radius and more off: still the centre, on the far side of the points', farFit && Math.hypot(farFit.centre.x - truth.x, farFit.centre.z - truth.z) < 0.05,
+  farFit ? `off by ${Math.hypot(farFit.centre.x - truth.x, farFit.centre.z - truth.z).toFixed(3)}, ${farFit.count} points` : 'no fit')
+check('points far from the guess are not used', fitCylinderCentre(side, {x: truth.x + 3, z: truth.z}, size) === null)
 
 console.log(failures === 0 ? '\nALL OBJECT PATH CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures ? 1 : 0)

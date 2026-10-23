@@ -59,3 +59,55 @@ export const walkAroundObject = (nearFace, cameraPosition, {floorY, radius, clea
   }
   return {centre, waypoints, anchor: pointAt(END_ANGLE)}
 }
+
+/** A fit needs this many tracked points on the object's side. */
+export const MIN_FIT_POINTS = 6
+/** Points this far from the guessed centre (in radii) and no further can be on the object. */
+export const FIT_SEARCH_RADII = 3
+/** Points lower than this share of the object's height are taken to be floor. */
+export const FIT_MIN_HEIGHT_SHARE = 0.1
+
+/**
+ * Where an upright cylinder of known size stands, from the engine's tracked points on its side:
+ * the centre whose circle the points lie closest to (a least-squares circle of fixed radius).
+ *
+ * The points lie on the side facing the viewer, and a circle of that radius fits an arc from
+ * either side of it, so the search starts on the far side: one radius beyond the points' middle.
+ *
+ * @param {{position: {x: number, y: number, z: number}}[]} points - The tracked world points.
+ * @param {{x: number, z: number}} guess - Where the centre is thought to be (from the tap).
+ * @param {Object} options
+ * @param {number} options.floorY
+ * @param {number} options.radius - Scene units.
+ * @param {number} options.height - Scene units.
+ * @param {{x: number, z: number}} options.viewer - The camera, which sees the points' side.
+ * @returns {{centre: THREE.Vector3, count: number} | null} null with too few points on the side.
+ */
+export const fitCylinderCentre = (points, guess, {floorY, radius, height, viewer}) => {
+  const reach = radius * FIT_SEARCH_RADII
+  const side = points
+    .map(({position}) => position)
+    .filter((p) => p.y >= floorY + height * FIT_MIN_HEIGHT_SHARE && p.y <= floorY + height &&
+      Math.hypot(p.x - guess.x, p.z - guess.z) <= reach)
+  if (side.length < MIN_FIT_POINTS) {
+    return null
+  }
+  const middleX = side.reduce((sum, p) => sum + p.x, 0) / side.length
+  const middleZ = side.reduce((sum, p) => sum + p.z, 0) / side.length
+  const away = Math.hypot(middleX - viewer.x, middleZ - viewer.z) || 1e-9
+  // Each point pulls the centre to one radius behind it, as seen from the current centre.
+  let x = middleX + ((middleX - viewer.x) / away) * radius
+  let z = middleZ + ((middleZ - viewer.z) / away) * radius
+  for (let round = 0; round < 20; round++) {
+    let sumX = 0
+    let sumZ = 0
+    side.forEach((p) => {
+      const length = Math.hypot(p.x - x, p.z - z) || 1e-9
+      sumX += p.x - ((p.x - x) / length) * radius
+      sumZ += p.z - ((p.z - z) / length) * radius
+    })
+    x = sumX / side.length
+    z = sumZ / side.length
+  }
+  return {centre: new THREE.Vector3(x, floorY, z), count: side.length}
+}
