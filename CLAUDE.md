@@ -50,6 +50,10 @@ src/
   floor-spot.js           Pure maths: where on the floor the scanner places content (tested)
   marker-anchor.js        Pure maths for /?scan&marker: wall plane, marker position, walk-out start (tested)
   object-path.js          Pure maths for ML exhibits: the walk from behind a free-standing object round to its front (tested)
+  ml/
+    model-config.js       URL of the Teachable Machine model
+    object-detector.js    Cuts camera frames and hands them to the worker; loadModel / startDetection
+    detector-worker.js    Web Worker running the classifier (TF.js from a CDN), off the main thread
   stone-wall.js           Procedural stone wall a locked creature hides behind (scanner flow)
   debug-panel.js          On-phone readout of live values, only with ?debug in the address
   xr-pipeline.js          The shared 8th Wall camera pipeline every AR page starts with

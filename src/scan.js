@@ -14,6 +14,11 @@
 // re-anchored to it whenever the marker is seen again, which keeps it from drifting. An invisible
 // plane on the real wall hides what is behind it, and the creature starts behind the wall and
 // walks out through it (see marker-anchor.js).
+//
+// `/?scan&c=<code>` of an exhibit with an `mlTarget` is the ML flow: after the poster, a classifier
+// (ml/object-detector.js) watches for the free-standing object itself; once it sees it, the visitor
+// taps where the object stands on the floor, and the creature walks out from behind it and round it
+// (object-path.js). Sizes are in metres, turned into scene units by the poster's reported width.
 
 import * as THREE from 'three'
 
@@ -39,14 +44,16 @@ const FLOOR_MARKER = 'floor-marker'
 const MARKER_SCALE = 0.6       // content scale when the marker reports no width (see contentScale)
 const OBJECT_GAP = 0.30        // object mode: how far in front of the object's near face the creature stands
 const OBJECT_EMERGE_SIDE = 0.55 // emerge-from-side offset in metres (right of anchor)
-// ML mode: the visitor aims at the middle of the object, so the camera ray reaches this height
-// above the floor right at the object. Its smooth surface has too few tracked points to measure.
-const OBJECT_CENTRE_HEIGHT = 0.5   // scene units: the camera starts 2 up, so ~0.35 m
-const OBJECT_MIN_DIST = 0.4
+// ML mode: a tap further along the floor than this (scene units) is taken to have missed it.
 const OBJECT_MAX_DIST = 4
 const OBJECT_SCALE_FALLBACK = 0.5
-/** ML mode: an exhibit without its own `objectSize` (content/exhibits.js) is taken to be this big. */
-const DEFAULT_OBJECT_SIZE = {radius: 0.2, height: 1.0}
+/** ML mode: an exhibit without its own `objectSize` (content/exhibits.js) is taken to be this big, in metres. */
+const DEFAULT_OBJECT_SIZE = {radius: 0.15, height: 0.5}
+/**
+ * Scene units per metre when the poster gave no size to go by: the camera starts 2 units up
+ * (placeCameraAtStart), and a phone is held about 1.3 m up.
+ */
+const DEFAULT_UNITS_PER_METRE = 2 / 1.3
 /** ML mode: room between the object's surface and the creature's centre, in creature heights. */
 const OBJECT_CLEARANCE_SHARE = 0.5
 
@@ -199,39 +206,79 @@ const scanPipelineModule = () => {
   let latestObjectDetail = null  // object/two-target mode: last seen detail for the exhibit object
   let objectFoundSeconds = 0   // two-target mode: seconds since the exhibit object was first seen
   let mlDetectorStop = null    // ML detection: cancel function returned by startDetection, or null
+  let fpsFrames = 0            // ?debug: frames and seconds counted towards the next fps reading
+  let fpsSeconds = 0
+  let posterScale = 0          // ML mode: the poster's reported width (detail.scale), scene units
+  const tapRaycaster = new THREE.Raycaster()
+
+  // Loads the ML model in its worker (seconds on a phone, but off the main thread), as early as the
+  // exhibit is known, so it is ready by the time the visitor gets to the object.
+  const loadMlModel = () => {
+    debug?.set('ml', 'loading model…')
+    return loadModel(OBJECT_MODEL_URL).then(({backend, ms}) => {
+      debug?.set('ml', `model ready: ${backend}, ${(ms / 1000).toFixed(1)} s`)
+    })
+  }
 
   // Starts the ML detection loop after the poster is recognised and exhibit.mlTarget is set.
-  // Loads the model on demand (async, ~2-4 s); re-guards if the state changed while loading.
+  // Re-guards if the state changed while the model was loading.
   const startMlDetection = async () => {
     if (mlDetectorStop || !exhibit?.mlTarget) return
     try {
-      await loadModel(OBJECT_MODEL_URL)
+      await loadMlModel()
     } catch (e) {
       debug?.set('ml', `model load failed: ${e.message}`)
       return
     }
     if (state !== 'found' || !exhibit?.mlTarget) return
     const {renderer} = XR8.Threejs.xrScene()
+    const onFrame = debug && ((best, ms) => debug.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}%, ${ms.toFixed(0)} ms`))
     mlDetectorStop = startDetection(renderer.domElement, (className, confidence) => {
       if (state !== 'found' || className !== exhibit.mlTarget) return
-      const {camera} = XR8.Threejs.xrScene()
-      camera.getWorldDirection(forward)
-      const centreY = currentFloorY() + OBJECT_CENTRE_HEIGHT
-      const fromRay = forward.y < -0.05 && camera.position.y > centreY
-        ? (centreY - camera.position.y) / forward.y
-        : null
-      const probePoint = camera.position.clone().addScaledVector(forward, 2.0)
-      const fromPoints = wallDistance(worldPoints, camera.position, probePoint)
-      const raw = Math.min(fromRay ?? Infinity, fromPoints ?? Infinity)
-      const dist = Number.isFinite(raw) ? THREE.MathUtils.clamp(raw, OBJECT_MIN_DIST, OBJECT_MAX_DIST) : 1.5
-      debug?.set('ml dist', `ray=${fromRay?.toFixed(2) ?? '-'} points=${fromPoints?.toFixed(2) ?? '-'}`)
-      objectPosition.copy(camera.position).addScaledVector(forward, dist)
-      latestObjectDetail = null  // use OBJECT_SCALE_FALLBACK for creature scale
-      glow.show({position: objectPosition.clone(), scale: 0.4})
-      state = 'found_object'
-      objectFoundSeconds = 0
-      debug?.set('ml', `${className} ${(confidence * 100).toFixed(0)}% dist=${dist.toFixed(2)}`)
-    })
+      // The classifier only says the object is in view, not where: the visitor shows that.
+      mlDetectorStop()
+      mlDetectorStop = null
+      state = 'tap_object'
+      debug?.set('state', state)
+      hint.setText(TEXT.scanTapObject)
+      debug?.set('ml', `${className} ${(confidence * 100).toFixed(0)}%`)
+    }, {onFrame})
+  }
+
+  /** How many scene units a metre is in this session, from the poster's reported width. */
+  const unitsPerMetre = () => posterScale > 0 && exhibit?.posterWidth > 0
+    ? THREE.MathUtils.clamp(posterScale / exhibit.posterWidth, DEFAULT_UNITS_PER_METRE / 3, DEFAULT_UNITS_PER_METRE * 3)
+    : DEFAULT_UNITS_PER_METRE
+
+  /**
+   * ML mode: the visitor tapped where the object stands on the floor. The tap's ray meets the
+   * floor at the object's near edge, exactly enough for any height of object, unlike the ray to
+   * some point up its side.
+   */
+  const onObjectTap = (event) => {
+    if (state !== 'tap_object') {
+      return
+    }
+    const {camera} = XR8.Threejs.xrScene()
+    const rect = canvas.getBoundingClientRect()
+    tapRaycaster.setFromCamera(new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1
+    ), camera)
+    const {origin, direction} = tapRaycaster.ray
+    const floorY = currentFloorY()
+    const along = direction.y < -1e-3 ? (floorY - origin.y) / direction.y : -1
+    const onFloor = origin.clone().addScaledVector(direction, along)
+    const reach = Math.hypot(onFloor.x - origin.x, onFloor.z - origin.z)
+    debug?.set('tap', along > 0 ? `floor at ${reach.toFixed(2)} away` : 'above the horizon')
+    if (along <= 0 || reach > OBJECT_MAX_DIST) {
+      return
+    }
+    objectPosition.copy(onFloor)
+    const height = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}.height * unitsPerMetre()
+    glow.show({position: onFloor.clone().setY(floorY + height / 2), scale: height})
+    state = 'found_object'
+    objectFoundSeconds = 0
   }
 
   const onObjectSeen = ({detail}) => {
@@ -318,6 +365,10 @@ const scanPipelineModule = () => {
       }
       if (objectMode) {
         latestObjectDetail = detail
+      }
+      if (exhibit.mlTarget && detail.scale > 0) {
+        posterScale = detail.scale
+        debug?.set('units per metre', unitsPerMetre())
       }
       debug?.set('wall', `${distance === null ? 'no points there' : `${distance.toFixed(2)} from points`}; image target says ${reported.toFixed(2)}`)
       glow.show(detail)
@@ -409,7 +460,8 @@ const scanPipelineModule = () => {
    */
   const placeAroundObject = (camera) => {
     const floorY = currentFloorY()
-    const size = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}
+    const metres = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}
+    const size = {radius: metres.radius * unitsPerMetre(), height: metres.height * unitsPerMetre()}
     const scale = OBJECT_SCALE_FALLBACK
     const clearance = tallestCreature(exhibit) * scale * OBJECT_CLEARANCE_SHARE
     const {centre, waypoints, anchor} = walkAroundObject(objectPosition, camera.position, {
@@ -418,7 +470,7 @@ const scanPipelineModule = () => {
     const {scene} = XR8.Threejs.xrScene()
     addObjectOccluder(scene, centre, size)
     const yaw = yawToward(anchor, camera.position)
-    debug?.set('object anchor', `centre=${centre.x.toFixed(2)},${floorY.toFixed(2)},${centre.z.toFixed(2)} r=${size.radius} anchor=${anchor.x.toFixed(2)},${anchor.z.toFixed(2)} camY=${camera.position.y.toFixed(2)}`)
+    debug?.set('object anchor', `centre=${centre.x.toFixed(2)},${floorY.toFixed(2)},${centre.z.toFixed(2)} r=${size.radius.toFixed(2)} h=${size.height.toFixed(2)} anchor=${anchor.x.toFixed(2)},${anchor.z.toFixed(2)} camY=${camera.position.y.toFixed(2)}`)
     placeExhibit({position: anchor, yaw, scale}, {puzzlesEnabled: false, emergeFrom: waypoints})
   }
 
@@ -522,6 +574,10 @@ const scanPipelineModule = () => {
       glow = createObjectGlow(scene)
       hint = createHint(TEXT.scanFloorFirst)
       debug?.set('state', state)
+      if (exhibit?.mlTarget) {
+        loadMlModel().catch((e) => debug?.set('ml', `model load failed: ${e.message}`))
+      }
+      canvas.addEventListener('pointerdown', onObjectTap)
     },
 
     onUpdate: ({processCpuResult}) => {
@@ -529,6 +585,13 @@ const scanPipelineModule = () => {
       glow.update(dt)
       worldPoints = processCpuResult?.reality?.worldPoints ?? worldPoints
       if (debug) {
+        fpsFrames++
+        fpsSeconds += dt
+        if (fpsSeconds >= 1) {
+          debug.set('fps', fpsFrames / fpsSeconds)
+          fpsFrames = 0
+          fpsSeconds = 0
+        }
         const {camera} = XR8.Threejs.xrScene()
         debug.set('camera', camera.position)
         debug.set(`looking down (y < ${FLOOR_PITCH})`, camera.getWorldDirection(forward).y)

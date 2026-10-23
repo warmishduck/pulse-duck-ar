@@ -36,10 +36,13 @@ import {CREATURES} from './creatures.js'
  *   front of the poster. The visitor scans the poster first, then finds and scans the object.
  *   Register both JSONs in src/image-targets/index.js.
  * @property {string} [mlTarget] - A class of the object classifier (src/ml/model-config.js). After
- *   the poster, the visitor points the camera at that free-standing object; the creature comes out
- *   from behind it and walks round it to the front.
+ *   the poster, the visitor points the camera at that free-standing object, then taps where it
+ *   stands on the floor; the creature comes out from behind it and walks round it to the front.
  * @property {{radius: number, height: number}} [objectSize] - The mlTarget object as an upright
- *   cylinder, in scene units (1 is about 0.7 m): it hides the creature while it is behind it.
+ *   cylinder, in metres: it hides the creature while it is behind it.
+ * @property {number} [posterWidth] - Metres: the real width of the poster's image target, i.e. of
+ *   the crop image-target-cli made (its shorter side), which the engine reports as `detail.scale`
+ *   in scene units. It turns metres into this session's scene units, which differ every session.
  */
 
 // Standing still on the floor: no hover, bob or turntable spin, so it walks round an object
@@ -69,14 +72,15 @@ export const EXHIBITS = {
   'office-cats': {creatures: [alone('glowcap')], imageTarget: 'cats-painting'},
   'office-clock': {creatures: [alone('acorn')], imageTarget: 'wood-clock'},
   // ML recognition test: cats painting → ML model detects the physical object from any angle.
-  // objectSize is a guess (purifier ~70 cm tall, ~26 cm across); measure the real ones.
+  // The cats painting is 50 x 40 cm; its image target crop is about 48 x 36 cm.
   'test-purifier': {
     creatures: [at('pinecone', 0, 0, GROUNDED)], imageTarget: 'cats-painting', mlTarget: 'air-purifier',
-    objectSize: {radius: 0.19, height: 1.0},
+    objectSize: {radius: 0.13, height: 0.49}, posterWidth: 0.36,
   },
+  // objectSize is a guess; measure the real station.
   'test-vacuum': {
     creatures: [at('glowcap', 0, 0, GROUNDED)], imageTarget: 'cats-painting', mlTarget: 'vacuum-station',
-    objectSize: {radius: 0.25, height: 0.6},
+    objectSize: {radius: 0.17, height: 0.4}, posterWidth: 0.36,
   },
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
