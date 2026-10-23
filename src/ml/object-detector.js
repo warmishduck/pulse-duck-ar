@@ -6,6 +6,8 @@ const INPUT_SIZE = 224
 // Teachable Machine trains on square crops of the middle of the frame, so a frame is classified
 // as squares, not squashed into one: this many, from one end of its long side to the other, so
 // an object anywhere in view (on the phone it was often near the top) is seen whole in one.
+// One square per tick, in turn: all three at once tripled the GPU work, and 8th Wall's tracking,
+// which shares the GPU, lost its way on the phone.
 const CROPS = 3
 
 /** @type {Worker | null} */
@@ -52,37 +54,36 @@ export const loadModel = (modelUrl) => {
   worker.postMessage({type: 'load', modelUrl})
   offscreen = document.createElement('canvas')
   offscreen.width = INPUT_SIZE
-  offscreen.height = INPUT_SIZE * CROPS
+  offscreen.height = INPUT_SIZE
   offCtx = offscreen.getContext('2d', {willReadFrequently: true})
   return ready
 }
 
 /**
- * Has the worker classify one frame, as CROPS squares along its long side.
+ * Has the worker classify one square of a frame.
  *
+ * @param {HTMLVideoElement | HTMLCanvasElement} source
+ * @param {number} crop - Which of the CROPS squares along the long side, 0 at the top (or left).
  * @returns {Promise<{scores: {className: string, probability: number}[][], ms: number} | null>}
- *   One list of scores per square, from the top (or left) of the frame.
+ *   The scores of that one square, as the only entry of `scores`.
  */
-const classifyFrame = (source) => {
+const classifyFrame = (source, crop) => {
   const width = source.videoWidth || source.width
   const height = source.videoHeight || source.height
   const side = Math.min(width, height)
-  const slack = Math.max(width, height) - side
-  for (let i = 0; i < CROPS; i++) {
-    const offset = (slack * i) / (CROPS - 1)
-    const [x, y] = width > height ? [offset, 0] : [0, offset]
-    offCtx.drawImage(source, x, y, side, side, 0, i * INPUT_SIZE, INPUT_SIZE, INPUT_SIZE)
-  }
-  // The squares lie one under another, so their pixels come out one image after another.
-  const {data} = offCtx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE * CROPS)
+  const offset = ((Math.max(width, height) - side) * crop) / (CROPS - 1)
+  const [x, y] = width > height ? [offset, 0] : [0, offset]
+  offCtx.drawImage(source, x, y, side, side, 0, 0, INPUT_SIZE, INPUT_SIZE)
+  const {data} = offCtx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE)
   return new Promise((resolve) => {
     pendingResult = resolve
-    worker.postMessage({type: 'classify', count: CROPS, width: INPUT_SIZE, height: INPUT_SIZE, pixels: data.buffer}, [data.buffer])
+    worker.postMessage({type: 'classify', count: 1, width: INPUT_SIZE, height: INPUT_SIZE, pixels: data.buffer}, [data.buffer])
   })
 }
 
 /**
- * Run inference on the camera feed every intervalMs.
+ * Run inference on the camera feed every intervalMs, one square of the frame at a time (middle,
+ * top, bottom, middle, …), so the whole view is covered every CROPS ticks.
  * Prefers the raw <video> element that 8th Wall injects (avoids the preserveDrawingBuffer
  * issue where reading a WebGL canvas outside the render frame produces a black image).
  * Falls back to glCanvas when no video element is found.
@@ -93,8 +94,8 @@ const classifyFrame = (source) => {
  * @param {(className: string, confidence: number) => void} onDetect
  * @param {{intervalMs?: number, threshold?: number, backgroundClass?: string,
  *   onFrame?: (best: {className: string, probability: number, crop: number}, ms: number) => void}} options -
- *   `onFrame` hears every frame's best guess (an object over background, from whichever square
- *   `crop`, 0 at the top) and how long the worker took (for ?debug).
+ *   `onFrame` hears every tick's best guess, which square it was (`crop`, 0 at the top) and how
+ *   long the worker took (for ?debug).
  * @returns {() => void} stop
  */
 export const startDetection = (glCanvas, onDetect, {
@@ -105,6 +106,7 @@ export const startDetection = (glCanvas, onDetect, {
 } = {}) => {
   if (!isReady) throw new Error('Call loadModel() first')
   let active = true
+  let ticks = 0
 
   const tick = async () => {
     if (!active) return
@@ -112,15 +114,11 @@ export const startDetection = (glCanvas, onDetect, {
       // 8th Wall injects a <video> element for the raw camera stream; use it so we get a
       // live frame rather than reading a WebGL canvas that may have an empty drawing buffer.
       const source = document.querySelector('video') ?? glCanvas
-      const result = await classifyFrame(source)
+      // The middle first: that is where a visitor usually holds what they point at.
+      const crop = (Math.floor(CROPS / 2) + ticks++) % CROPS
+      const result = await classifyFrame(source, crop)
       if (active && result) {
-        const bests = result.scores.map((scores, crop) => ({
-          ...scores.reduce((a, b) => a.probability > b.probability ? a : b), crop,
-        }))
-        const objects = bests.filter((guess) => guess.className !== backgroundClass)
-        const best = objects.length > 0
-          ? objects.reduce((a, b) => a.probability > b.probability ? a : b)
-          : bests[Math.floor(CROPS / 2)]
+        const best = {...result.scores[0].reduce((a, b) => a.probability > b.probability ? a : b), crop}
         onFrame?.(best, result.ms)
         if (best.className !== backgroundClass && best.probability >= threshold) {
           onDetect(best.className, best.probability)

@@ -54,6 +54,12 @@ const DEFAULT_OBJECT_SIZE = {radius: 0.15, height: 0.5}
  * (placeCameraAtStart), and a phone is held about 1.3 m up.
  */
 const DEFAULT_UNITS_PER_METRE = 2 / 1.3
+/** ML mode: units per metre read off the poster stay within this factor of the default. */
+const UNITS_PER_METRE_RANGE = 2
+/** ML mode: a poster reading counts only this close (scene units), and agreeing this well with the points. */
+const POSTER_MAX_DIST = 6
+const POSTER_DISTANCE_AGREEMENT = 0.3
+const POSTER_READINGS_KEPT = 15
 /** ML mode: room between the object's surface and the creature's centre, in creature heights. */
 const OBJECT_CLEARANCE_SHARE = 0.5
 
@@ -211,7 +217,8 @@ const scanPipelineModule = () => {
   let mlDetectorStop = null    // ML detection: cancel function returned by startDetection, or null
   let fpsFrames = 0            // ?debug: frames and seconds counted towards the next fps reading
   let fpsSeconds = 0
-  let posterScale = 0          // ML mode: the poster's reported width (detail.scale), scene units
+  let posterScale = 0          // ML mode: the poster's width (median of sound detail.scale readings), scene units
+  const posterScales = []      // ML mode: the latest sound readings of it
   let pendingTap = null        // ML mode: where the visitor tapped before the object was recognised
   let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
   let worldJumps = 0
@@ -262,7 +269,8 @@ const scanPipelineModule = () => {
       return 1
     }
     return posterScale > 0 && exhibit?.posterWidth > 0
-      ? THREE.MathUtils.clamp(posterScale / exhibit.posterWidth, DEFAULT_UNITS_PER_METRE / 3, DEFAULT_UNITS_PER_METRE * 3)
+      ? THREE.MathUtils.clamp(posterScale / exhibit.posterWidth,
+        DEFAULT_UNITS_PER_METRE / UNITS_PER_METRE_RANGE, DEFAULT_UNITS_PER_METRE * UNITS_PER_METRE_RANGE)
       : DEFAULT_UNITS_PER_METRE
   }
 
@@ -394,9 +402,15 @@ const scanPipelineModule = () => {
       if (objectMode) {
         latestObjectDetail = detail
       }
-      if (exhibit.mlTarget && detail.scale > 0) {
-        posterScale = detail.scale
-        debug?.set('units per metre', unitsPerMetre())
+      // Only sound readings count: while tracking was lost the phone reported the poster 19 units
+      // away at several times its size, and that one reading made the object three times too big.
+      const sound = tracking?.status === 'NORMAL' && reported <= POSTER_MAX_DIST &&
+        (distance === null || Math.abs(reported - distance) <= distance * POSTER_DISTANCE_AGREEMENT)
+      if (exhibit.mlTarget && detail.scale > 0 && sound) {
+        posterScales.push(detail.scale)
+        posterScales.splice(0, posterScales.length - POSTER_READINGS_KEPT)
+        posterScale = median(posterScales)
+        debug?.set('units per metre', `${unitsPerMetre().toFixed(2)} (${posterScales.length} readings)`)
       }
       debug?.set('wall', `${distance === null ? 'no points there' : `${distance.toFixed(2)} from points`}; image target says ${reported.toFixed(2)}`)
       glow.show(detail)
