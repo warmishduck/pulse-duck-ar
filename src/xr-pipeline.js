@@ -7,11 +7,14 @@
  * @param {Object[]} [options.imageTargetData] - Image targets to watch for (image-target-cli
  *   output). World tracking stays on alongside them, and the engine then also returns its tracked
  *   points (`reality.worldPoints` in a module's `processCpuResult`), which scan.js measures with.
+ * @param {'responsive' | 'absolute'} [options.scale] - The engine's world scale (with image
+ *   targets only): 'responsive' (its default) puts the camera at the start height
+ *   placeCameraAtStart sets; 'absolute' measures everything in metres from the real floor.
  */
-export const startXr = (pageModule, {imageTargetData} = {}) => {
+export const startXr = (pageModule, {imageTargetData, scale} = {}) => {
   const onxrloaded = () => {
     if (imageTargetData) {
-      XR8.XrController.configure({imageTargetData, enableWorldPoints: true})
+      XR8.XrController.configure({imageTargetData, enableWorldPoints: true, ...(scale && {scale})})
     }
     XR8.addCameraPipelineModules([
       XR8.GlTextureRenderer.pipelineModule(),      // Draws the camera feed.

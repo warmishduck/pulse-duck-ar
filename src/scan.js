@@ -67,6 +67,8 @@ const FLOOR_SAMPLE_SECONDS = 0.1   // between two readings of the floor's height
 const FLOOR_SAMPLES_NEEDED = 5     // readings before the floor counts as measured
 const FLOOR_SAMPLES_KEPT = 9       // the median is taken over the latest of them
 const FLOOR_GIVE_UP_SECONDS = 2    // looking down this long without a measurement: assume y = 0
+/** ?debug: the camera moving further than this in one frame (scene units) is the engine's world jumping, not a hand. */
+const WORLD_JUMP = 0.25
 
 /** A soft ring: clear in the middle so the object itself stays visible, brightest near its edge. */
 const makeGlowTexture = () => {
@@ -195,6 +197,7 @@ const scanPipelineModule = () => {
   const urlParams = new URLSearchParams(window.location.search)
   const markerMode = urlParams.has('marker')
   const objectMode = urlParams.has('object')
+  const absoluteScale = urlParams.has('absolute')   // the engine works in metres (see startScan)
   // /?scan&c=<code> pre-selects an exhibit so the scanner uses its imageTarget as the poster trigger.
   const preloadedCode = urlParams.get('c')?.trim().toLowerCase() ?? null
   if (preloadedCode && Object.hasOwn(EXHIBITS, preloadedCode)) {
@@ -209,6 +212,9 @@ const scanPipelineModule = () => {
   let fpsFrames = 0            // ?debug: frames and seconds counted towards the next fps reading
   let fpsSeconds = 0
   let posterScale = 0          // ML mode: the poster's reported width (detail.scale), scene units
+  let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
+  let worldJumps = 0
+  const trackingLog = []       // ?debug: the latest changes of tracking status
   const tapRaycaster = new THREE.Raycaster()
 
   // Loads the ML model in its worker (seconds on a phone, but off the main thread), as early as the
@@ -245,10 +251,15 @@ const scanPipelineModule = () => {
     }, {onFrame})
   }
 
-  /** How many scene units a metre is in this session, from the poster's reported width. */
-  const unitsPerMetre = () => posterScale > 0 && exhibit?.posterWidth > 0
-    ? THREE.MathUtils.clamp(posterScale / exhibit.posterWidth, DEFAULT_UNITS_PER_METRE / 3, DEFAULT_UNITS_PER_METRE * 3)
-    : DEFAULT_UNITS_PER_METRE
+  /** How many scene units a metre is in this session: 1 at the metre scale, else from the poster's reported width. */
+  const unitsPerMetre = () => {
+    if (absoluteScale) {
+      return 1
+    }
+    return posterScale > 0 && exhibit?.posterWidth > 0
+      ? THREE.MathUtils.clamp(posterScale / exhibit.posterWidth, DEFAULT_UNITS_PER_METRE / 3, DEFAULT_UNITS_PER_METRE * 3)
+      : DEFAULT_UNITS_PER_METRE
+  }
 
   /**
    * ML mode: the visitor tapped where the object stands on the floor. The tap's ray meets the
@@ -462,7 +473,8 @@ const scanPipelineModule = () => {
     const floorY = currentFloorY()
     const metres = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}
     const size = {radius: metres.radius * unitsPerMetre(), height: metres.height * unitsPerMetre()}
-    const scale = OBJECT_SCALE_FALLBACK
+    // Sized in the same units as the object, so the two keep their real proportion.
+    const scale = OBJECT_SCALE_FALLBACK * unitsPerMetre() / DEFAULT_UNITS_PER_METRE
     const clearance = tallestCreature(exhibit) * scale * OBJECT_CLEARANCE_SHARE
     const {centre, waypoints, anchor} = walkAroundObject(objectPosition, camera.position, {
       floorY, radius: size.radius, clearance,
@@ -505,8 +517,14 @@ const scanPipelineModule = () => {
   }
 
   const onTrackingStatus = ({detail}) => {
+    const changed = !tracking || tracking.status !== detail.status || tracking.reason !== detail.reason
     tracking = detail
     debug?.set('tracking', `${detail.status} ${detail.reason}`)
+    if (debug && changed) {
+      trackingLog.push(`${clock.elapsedTime.toFixed(0)}s ${detail.status} ${detail.reason}`)
+      trackingLog.splice(0, trackingLog.length - 4)
+      debug.set('tracking log', trackingLog.join(' | '))
+    }
   }
 
   /**
@@ -594,6 +612,14 @@ const scanPipelineModule = () => {
         }
         const {camera} = XR8.Threejs.xrScene()
         debug.set('camera', camera.position)
+        if (lastCameraPosition) {
+          const moved = camera.position.distanceTo(lastCameraPosition)
+          if (moved > WORLD_JUMP) {
+            worldJumps++
+            debug.set('world jumps', `${worldJumps}, last ${moved.toFixed(2)} at ${clock.elapsedTime.toFixed(0)}s`)
+          }
+        }
+        lastCameraPosition = camera.position.clone()
         debug.set(`looking down (y < ${FLOOR_PITCH})`, camera.getWorldDirection(forward).y)
         debug.set('world points', worldPoints.length)
       }
@@ -684,9 +710,13 @@ const scanPipelineModule = () => {
   }
 }
 
-/** Starts the camera, with world tracking and every configured image target. */
+/**
+ * Starts the camera, with world tracking and every configured image target. `&absolute` in the
+ * address tries the engine's metre scale (a trial: the default scale drifted when walking about).
+ */
 export const startScan = () => {
-  startXr(scanPipelineModule(), {imageTargetData: IMAGE_TARGET_DATA})
+  const scale = new URLSearchParams(window.location.search).has('absolute') ? 'absolute' : undefined
+  startXr(scanPipelineModule(), {imageTargetData: IMAGE_TARGET_DATA, scale})
 }
 
 /** True when at least one image target is configured, so scanning can find something. */
