@@ -44,6 +44,7 @@ export const STRINGS = {
     scanMarker: 'Found it! Now point the camera at the marker on the floor',
     scanFindObject: 'Found it! Now find the exhibit object and point the camera at it',
     scanTapObject: 'Now tap the spot on the screen where the object stands on the floor',
+    scanHoldObject: 'Got it. Keep the object in view while it is recognised',
     scanFloorFirst: 'Point the camera briefly at the floor, then look up at the exhibit',
     puzzleSkip: 'Skip puzzle',
   },
@@ -83,6 +84,7 @@ export const STRINGS = {
     scanMarker: 'Löytyi! Osoita nyt kameralla lattialla olevaa merkkiä',
     scanFindObject: 'Löytyi! Etsi nyt esine ja osoita kamera sitä kohti',
     scanTapObject: 'Napauta nyt ruudulla kohtaa, jossa esine seisoo lattialla',
+    scanHoldObject: 'Selvä. Pidä esine kuvassa, kun sitä tunnistetaan',
     scanFloorFirst: 'Osoita kamera hetkeksi lattiaan, sitten nosta se kohti esinettä',
     puzzleSkip: 'Ohita palapeli',
   },
@@ -122,6 +124,7 @@ export const STRINGS = {
     scanMarker: 'Hittad! Rikta nu kameran mot markören på golvet',
     scanFindObject: 'Hittad! Hitta nu föremålet och rikta kameran mot det',
     scanTapObject: 'Tryck nu på skärmen där föremålet står på golvet',
+    scanHoldObject: 'Okej. Håll föremålet i bild medan det känns igen',
     scanFloorFirst: 'Rikta kameran kort mot golvet, lyft sedan mot föremålet',
     puzzleSkip: 'Hoppa över pusslet',
   },
@@ -161,6 +164,7 @@ export const STRINGS = {
     scanMarker: 'Знайдено! Тепер наведи камеру на маркер на підлозі',
     scanFindObject: 'Знайдено! Тепер знайди предмет і наведи на нього камеру',
     scanTapObject: 'Тепер торкнися на екрані місця, де предмет стоїть на підлозі',
+    scanHoldObject: 'Добре. Тримай предмет у кадрі, поки він розпізнається',
     scanFloorFirst: 'Наведи камеру на підлогу на секунду, потім підніми до предмета',
     puzzleSkip: 'Пропустити пазл',
   },
@@ -173,14 +177,15 @@ export const STRINGS = {
 export const LANGS = ['fi', 'en', 'sv', 'uk']
 export const LANG_LABELS = {fi: 'FI', en: 'EN', sv: 'SV', uk: 'UA'}
 export const LANG_NAMES = {fi: 'Suomi', en: 'English', sv: 'Svenska', uk: 'Українська'}
-export const DEFAULT_LANG = 'fi'
+// English for now, while the developer tests (2026-10-23); the museum's default is Finnish ('fi').
+export const DEFAULT_LANG = 'en'
 
 // localStorage is shared by every site on the same host (all of someone.github.io), and the live
 // site stores its choice under the plain key `lumina-ar-lang`: so this one carries the site's
 // folder, or a language picked on the live site would turn up here, and the other way round.
 const LANG_KEY = `lumina-ar-lang:${typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : ''}`
 
-// Starts from whatever the visitor picked last time, otherwise Finnish. Not the phone's own
+// Starts from whatever the visitor picked last time, otherwise DEFAULT_LANG. Not the phone's own
 // language: a phone set to Swedish or English is no sign the visitor wants it here.
 const detectLang = () => {
   try {

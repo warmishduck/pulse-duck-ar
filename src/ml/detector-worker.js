@@ -2,8 +2,10 @@
 // programs on the first prediction, which blocked the page for seconds on a phone: the camera
 // froze. Here that happens off the main thread, before the first camera frame is classified.
 //
-// Messages in:  {type: 'load', modelUrl} | {type: 'classify', width, height, pixels: ArrayBuffer (RGBA)}
-// Messages out: {type: 'ready', backend, ms} | {type: 'error', message} | {type: 'result', scores, ms}
+// Messages in:  {type: 'load', modelUrl}
+//             | {type: 'classify', count, width, height, pixels: ArrayBuffer (RGBA, `count` images one after another)}
+// Messages out: {type: 'ready', backend, ms} | {type: 'error', message}
+//             | {type: 'result', scores: one [{className, probability}] list per image, ms}
 //
 // The input is prepared as Teachable Machine's own library does it (capture() in
 // @teachablemachine/image): a centre square of the frame at the model's size, scaled to -1..1.
@@ -35,17 +37,22 @@ const load = async (modelUrl) => {
 }
 
 /**
- * @param {{width: number, height: number, pixels: ArrayBuffer}} frame - RGBA, already the model's size.
+ * Classifies several images in one batch.
+ *
+ * @param {{count: number, width: number, height: number, pixels: ArrayBuffer}} frames - RGBA,
+ *   each already the model's size.
  */
-const classify = async ({width, height, pixels}) => {
+const classify = async ({count, width, height, pixels}) => {
   const started = performance.now()
   const output = tf.tidy(() => {
-    const image = tf.browser.fromPixels({data: new Uint8Array(pixels), width, height})
-    return model.predict(image.expandDims(0).toFloat().div(127).sub(1))
+    const rgba = tf.tensor4d(new Uint8Array(pixels), [count, height, width, 4], 'int32')
+    const rgb = rgba.slice([0, 0, 0, 0], [count, height, width, 3])
+    return model.predict(rgb.toFloat().div(127).sub(1))
   })
   const probabilities = await output.data()
   output.dispose()
-  const scores = labels.map((className, i) => ({className, probability: probabilities[i]}))
+  const scores = Array.from({length: count}, (_, image) =>
+    labels.map((className, i) => ({className, probability: probabilities[image * labels.length + i]})))
   postMessage({type: 'result', scores, ms: performance.now() - started})
 }
 

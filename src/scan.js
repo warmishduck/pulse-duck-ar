@@ -212,6 +212,7 @@ const scanPipelineModule = () => {
   let fpsFrames = 0            // ?debug: frames and seconds counted towards the next fps reading
   let fpsSeconds = 0
   let posterScale = 0          // ML mode: the poster's reported width (detail.scale), scene units
+  let pendingTap = null        // ML mode: where the visitor tapped before the object was recognised
   let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
   let worldJumps = 0
   const trackingLog = []       // ?debug: the latest changes of tracking status
@@ -238,16 +239,20 @@ const scanPipelineModule = () => {
     }
     if (state !== 'found' || !exhibit?.mlTarget) return
     const {renderer} = XR8.Threejs.xrScene()
-    const onFrame = debug && ((best, ms) => debug.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}%, ${ms.toFixed(0)} ms`))
+    const onFrame = debug && ((best, ms) => debug.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}% (square ${best.crop}), ${ms.toFixed(0)} ms`))
     mlDetectorStop = startDetection(renderer.domElement, (className, confidence) => {
       if (state !== 'found' || className !== exhibit.mlTarget) return
       // The classifier only says the object is in view, not where: the visitor shows that.
       mlDetectorStop()
       mlDetectorStop = null
+      debug?.set('ml', `${className} ${(confidence * 100).toFixed(0)}%`)
+      if (pendingTap) {
+        standObjectAt(pendingTap)
+        return
+      }
       state = 'tap_object'
       debug?.set('state', state)
       hint.setText(TEXT.scanTapObject)
-      debug?.set('ml', `${className} ${(confidence * 100).toFixed(0)}%`)
     }, {onFrame})
   }
 
@@ -261,13 +266,24 @@ const scanPipelineModule = () => {
       : DEFAULT_UNITS_PER_METRE
   }
 
+  /** ML mode: the object stands at this floor point (its near edge); glow there, then place. */
+  const standObjectAt = (point) => {
+    objectPosition.copy(point)
+    const height = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}.height * unitsPerMetre()
+    glow.show({position: point.clone().setY(currentFloorY() + height / 2), scale: height})
+    state = 'found_object'
+    objectFoundSeconds = 0
+  }
+
   /**
    * ML mode: the visitor tapped where the object stands on the floor. The tap's ray meets the
    * floor at the object's near edge, exactly enough for any height of object, unlike the ray to
-   * some point up its side.
+   * some point up its side. A tap before the classifier has recognised the object is kept for
+   * when it does, so it is not lost.
    */
   const onObjectTap = (event) => {
-    if (state !== 'tap_object') {
+    const early = state === 'found' && exhibit?.mlTarget
+    if (state !== 'tap_object' && !early) {
       return
     }
     const {camera} = XR8.Threejs.xrScene()
@@ -285,11 +301,12 @@ const scanPipelineModule = () => {
     if (along <= 0 || reach > OBJECT_MAX_DIST) {
       return
     }
-    objectPosition.copy(onFloor)
-    const height = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}.height * unitsPerMetre()
-    glow.show({position: onFloor.clone().setY(floorY + height / 2), scale: height})
-    state = 'found_object'
-    objectFoundSeconds = 0
+    if (early) {
+      pendingTap = onFloor
+      hint.setText(TEXT.scanHoldObject)
+      return
+    }
+    standObjectAt(onFloor)
   }
 
   const onObjectSeen = ({detail}) => {
