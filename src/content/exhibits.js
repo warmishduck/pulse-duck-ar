@@ -35,7 +35,16 @@ import {CREATURES} from './creatures.js'
  *   exhibit object. When set, the creature appears near this target rather than on the floor in
  *   front of the poster. The visitor scans the poster first, then finds and scans the object.
  *   Register both JSONs in src/image-targets/index.js.
+ * @property {string} [mlTarget] - A class of the object classifier (src/ml/model-config.js). After
+ *   the poster, the visitor points the camera at that free-standing object; the creature comes out
+ *   from behind it and walks round it to the front.
+ * @property {{radius: number, height: number}} [objectSize] - The mlTarget object as an upright
+ *   cylinder, in scene units (1 is about 0.7 m): it hides the creature while it is behind it.
  */
+
+// Standing still on the floor: no hover, bob or turntable spin, so it walks round an object
+// facing the way it goes and stays on the floor.
+const GROUNDED = {hover: 0, bob: 0, spinSpeed: 0}
 
 const at = (id, x = 0, z = -0.2, extra = {}) => ({id, x, z, ...extra})
 
@@ -60,8 +69,15 @@ export const EXHIBITS = {
   'office-cats': {creatures: [alone('glowcap')], imageTarget: 'cats-painting'},
   'office-clock': {creatures: [alone('acorn')], imageTarget: 'wood-clock'},
   // ML recognition test: cats painting → ML model detects the physical object from any angle.
-  'test-purifier': {creatures: [at('pinecone')], imageTarget: 'cats-painting', mlTarget: 'air-purifier'},
-  'test-vacuum': {creatures: [at('glowcap')], imageTarget: 'cats-painting', mlTarget: 'vacuum-station'},
+  // objectSize is a guess (purifier ~70 cm tall, ~26 cm across); measure the real ones.
+  'test-purifier': {
+    creatures: [at('pinecone', 0, 0, GROUNDED)], imageTarget: 'cats-painting', mlTarget: 'air-purifier',
+    objectSize: {radius: 0.19, height: 1.0},
+  },
+  'test-vacuum': {
+    creatures: [at('glowcap', 0, 0, GROUNDED)], imageTarget: 'cats-painting', mlTarget: 'vacuum-station',
+    objectSize: {radius: 0.25, height: 0.6},
+  },
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
   // The yard game, open whenever the museum is closed: no creatures, straight into the game.

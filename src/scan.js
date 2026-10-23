@@ -25,6 +25,7 @@ import {FLOOR_PITCH, floorHeight, floorSpot, median, wallDistance} from './floor
 import {
   MARKER_SEARCH_ANGLE, MIN_MARKER_POINTS, contentScale, emergeStart, markerPosition, wallPlane, yawToward,
 } from './marker-anchor'
+import {walkAroundObject} from './object-path'
 import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
@@ -44,6 +45,10 @@ const OBJECT_CENTRE_HEIGHT = 0.5   // scene units: the camera starts 2 up, so ~0
 const OBJECT_MIN_DIST = 0.4
 const OBJECT_MAX_DIST = 4
 const OBJECT_SCALE_FALLBACK = 0.5
+/** ML mode: an exhibit without its own `objectSize` (content/exhibits.js) is taken to be this big. */
+const DEFAULT_OBJECT_SIZE = {radius: 0.2, height: 1.0}
+/** ML mode: room between the object's surface and the creature's centre, in creature heights. */
+const OBJECT_CLEARANCE_SHARE = 0.5
 
 const GLOW_COLOR = 0xffd98a
 const GLOW_SIZE = 1.8          // the halo's diameter, in multiples of the object's size
@@ -383,10 +388,48 @@ const scanPipelineModule = () => {
    */
   const currentFloorY = () => floorSamples.length >= FLOOR_SAMPLES_NEEDED ? median(floorSamples) : 0
 
+  /**
+   * An invisible upright cylinder where the real object stands: it writes depth but no colour, so
+   * the creature is hidden while it is behind the object. With ?debug it shows as a wireframe.
+   */
+  const addObjectOccluder = (scene, centre, {radius, height}) => {
+    const geometry = new THREE.CylinderGeometry(radius, radius, height, 32)
+    const occluder = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({colorWrite: false}))
+    occluder.renderOrder = -1
+    occluder.position.set(centre.x, centre.y + height / 2, centre.z)
+    if (debug) {
+      occluder.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: 0x00ffff, wireframe: true})))
+    }
+    scene.add(occluder)
+  }
+
+  /**
+   * ML mode: the creature starts hidden behind the free-standing object and walks round it to
+   * stand on the floor in front of it, facing the visitor (object-path.js).
+   */
+  const placeAroundObject = (camera) => {
+    const floorY = currentFloorY()
+    const size = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}
+    const scale = OBJECT_SCALE_FALLBACK
+    const clearance = tallestCreature(exhibit) * scale * OBJECT_CLEARANCE_SHARE
+    const {centre, waypoints, anchor} = walkAroundObject(objectPosition, camera.position, {
+      floorY, radius: size.radius, clearance,
+    })
+    const {scene} = XR8.Threejs.xrScene()
+    addObjectOccluder(scene, centre, size)
+    const yaw = yawToward(anchor, camera.position)
+    debug?.set('object anchor', `centre=${centre.x.toFixed(2)},${floorY.toFixed(2)},${centre.z.toFixed(2)} r=${size.radius} anchor=${anchor.x.toFixed(2)},${anchor.z.toFixed(2)} camY=${camera.position.y.toFixed(2)}`)
+    placeExhibit({position: anchor, yaw, scale}, {puzzlesEnabled: false, emergeFrom: waypoints})
+  }
+
   /** Object mode: once the exhibit is recognised, anchor the creature right in front of it. */
   const placeOnObject = (camera) => {
     if (tracking && tracking.status !== 'NORMAL') {
       hint.setText(TEXT.scanMove)
+      return
+    }
+    if (exhibit.mlTarget) {
+      placeAroundObject(camera)
       return
     }
     const toCamera = new THREE.Vector3(camera.position.x - objectPosition.x, 0, camera.position.z - objectPosition.z)

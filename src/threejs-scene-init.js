@@ -19,6 +19,16 @@ const EMERGE_SPEED = 0.4          // scene units per second, walking out from be
 const EMERGE_MIN_SECONDS = 1.5
 const EMERGE_MAX_SECONDS = 6
 const FOLLOW_RATE = 4            // 1/s: how fast content eases after a marker that moved
+const TURN_RATE = 6              // 1/s: how fast walking content turns to a new heading
+
+/**
+ * The way to turn from one yaw to another, the short way round.
+ *
+ * @param {number} from - Radians.
+ * @param {number} to - Radians.
+ * @returns {number} Radians, between -PI and PI.
+ */
+const turnBetween = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from))
 
 /**
  * Sets the AR camera's starting pose: 2 units above the floor (y = 0), pulled back so the
@@ -41,8 +51,10 @@ export const placeCameraAtStart = (camera) => {
  *   and this module sets the camera up.
  * @param {boolean} [options.puzzlesEnabled] - False: creatures are awake from the start, no
  *   puzzle and no stone wall (the marker flow, where the real wall does the hiding).
- * @param {THREE.Vector3} [options.emergeFrom] - With an anchor: start the content here and walk
- *   it to the anchor (EMERGE_SPEED), so it comes out from behind an invisible wall.
+ * @param {THREE.Vector3 | THREE.Vector3[]} [options.emergeFrom] - With an anchor: start the
+ *   content here (or at the first of these waypoints, then through the rest) and walk it to the
+ *   anchor at EMERGE_SPEED, facing the way it walks, so it comes out from behind something
+ *   invisible (a wall, or the object it walks round). At the anchor it turns to `anchor.yaw`.
  * @returns {Object} An 8th Wall camera pipeline module, plus `moveAnchor(position)`: the anchor
  *   follows a marker that is tracked again (the content eases to the new spot).
  */
@@ -73,13 +85,32 @@ export const initScenePipelineModule = (exhibit, {anchor = null, puzzlesEnabled 
   let stage = null
   let shadowFloor = null
   const anchorTarget = anchor ? anchor.position.clone() : null
-  const emerging = emergeFrom && anchor
-    ? {
-      from: emergeFrom.clone(),
-      elapsed: 0,
-      seconds: THREE.MathUtils.clamp(emergeFrom.distanceTo(anchor.position) / EMERGE_SPEED, EMERGE_MIN_SECONDS, EMERGE_MAX_SECONDS),
-    }
+  const route = emergeFrom && anchor ? [...[emergeFrom].flat(), anchor.position].map((point) => point.clone()) : null
+  const routeLengths = route ? route.slice(1).map((point, i) => point.distanceTo(route[i])) : []
+  const routeLength = routeLengths.reduce((sum, length) => sum + length, 0)
+  const emerging = route
+    ? {elapsed: 0, seconds: THREE.MathUtils.clamp(routeLength / EMERGE_SPEED, EMERGE_MIN_SECONDS, EMERGE_MAX_SECONDS)}
     : null
+
+  /**
+   * Where along the route the content is, and which way that leg of it heads.
+   *
+   * @param {number} distance - Scene units walked from the start of the route.
+   * @returns {{position: THREE.Vector3, heading: number | null}} heading null on a leg of no length.
+   */
+  const alongRoute = (distance) => {
+    let leg = 0
+    while (leg < routeLengths.length - 1 && distance > routeLengths[leg]) {
+      distance -= routeLengths[leg]
+      leg++
+    }
+    const from = route[leg]
+    const to = route[leg + 1]
+    const length = routeLengths[leg]
+    const position = length > 0 ? from.clone().lerp(to, Math.min(1, distance / length)) : to.clone()
+    const heading = length > 0 ? Math.atan2(to.x - from.x, to.z - from.z) : null
+    return {position, heading}
+  }
 
   // The on-screen extras (loading note, hint, buttons), created in onStart.
   let ui = null
@@ -112,8 +143,9 @@ export const initScenePipelineModule = (exhibit, {anchor = null, puzzlesEnabled 
     // Everything the exhibit shows lives in `stage`, so an anchor moves it all at once.
     stage = new THREE.Group()
     if (anchor) {
-      stage.position.copy(emerging ? emerging.from : anchor.position)
-      stage.rotation.y = anchor.yaw
+      const start = emerging ? alongRoute(0) : null
+      stage.position.copy(start ? start.position : anchor.position)
+      stage.rotation.y = start?.heading ?? anchor.yaw
       stage.scale.setScalar(anchor.scale)
     }
     scene.add(stage)
@@ -150,16 +182,23 @@ export const initScenePipelineModule = (exhibit, {anchor = null, puzzlesEnabled 
     }
   }
 
-  // Walks the stage out from behind the wall, then eases it after a marker that moved.
+  // Walks the stage out along its route, then turns it to face the visitor and eases it after a
+  // marker that moved.
   const updateAnchor = (dt) => {
     if (!stage || !anchorTarget) {
       return
     }
+    const turnRate = 1 - Math.exp(-dt * TURN_RATE)
     if (emerging && emerging.elapsed < emerging.seconds) {
       emerging.elapsed += dt
-      stage.position.lerpVectors(emerging.from, anchorTarget, Math.min(1, emerging.elapsed / emerging.seconds))
+      const {position, heading} = alongRoute(routeLength * Math.min(1, emerging.elapsed / emerging.seconds))
+      stage.position.copy(position)
+      if (heading !== null) {
+        stage.rotation.y += turnBetween(stage.rotation.y, heading) * turnRate
+      }
       return
     }
+    stage.rotation.y += turnBetween(stage.rotation.y, anchor.yaw) * turnRate
     stage.position.lerp(anchorTarget, 1 - Math.exp(-dt * FOLLOW_RATE))
   }
 
