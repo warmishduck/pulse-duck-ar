@@ -40,7 +40,7 @@ const OBJECT_GAP = 0.30        // object mode: how far in front of the object's 
 const OBJECT_EMERGE_SIDE = 0.55 // emerge-from-side offset in metres (right of anchor)
 // ML mode: the visitor aims at the middle of the object, so the camera ray reaches this height
 // above the floor right at the object. Its smooth surface has too few tracked points to measure.
-const OBJECT_CENTRE_HEIGHT = 0.35
+const OBJECT_CENTRE_HEIGHT = 0.5   // scene units: the camera starts 2 up, so ~0.35 m
 const OBJECT_MIN_DIST = 0.4
 const OBJECT_MAX_DIST = 4
 const OBJECT_SCALE_FALLBACK = 0.5
@@ -211,7 +211,7 @@ const scanPipelineModule = () => {
       if (state !== 'found' || className !== exhibit.mlTarget) return
       const {camera} = XR8.Threejs.xrScene()
       camera.getWorldDirection(forward)
-      const centreY = currentFloorY(camera) + OBJECT_CENTRE_HEIGHT
+      const centreY = currentFloorY() + OBJECT_CENTRE_HEIGHT
       const fromRay = forward.y < -0.05 && camera.position.y > centreY
         ? (centreY - camera.position.y) / forward.y
         : null
@@ -377,10 +377,11 @@ const scanPipelineModule = () => {
     )
   }
 
-  /** Measured floor if the visitor looked down; else derived from the tracked points; else ~1.2 m below the phone. */
-  const currentFloorY = (camera) => floorSamples.length >= FLOOR_SAMPLES_NEEDED
-    ? median(floorSamples)
-    : (floorHeight(worldPoints.map((p) => p.position.y), camera.position.y) ?? (camera.position.y - 1.2))
+  /**
+   * Measured floor if the visitor looked down; otherwise the engine's own ground plane, y = 0
+   * (placeCameraAtStart). Points read while looking elsewhere pick up tabletops and the object itself.
+   */
+  const currentFloorY = () => floorSamples.length >= FLOOR_SAMPLES_NEEDED ? median(floorSamples) : 0
 
   /** Object mode: once the exhibit is recognised, anchor the creature right in front of it. */
   const placeOnObject = (camera) => {
@@ -394,7 +395,7 @@ const scanPipelineModule = () => {
     } else {
       toCamera.set(0, 0, 1)
     }
-    const floorY = currentFloorY(camera)
+    const floorY = currentFloorY()
     // Anchor at floor level, a step in front of the object toward the viewer.
     const position = objectPosition.clone()
     position.y = floorY
