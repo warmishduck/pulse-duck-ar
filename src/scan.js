@@ -32,7 +32,7 @@ import {
   MARKER_SEARCH_ANGLE, MIN_MARKER_POINTS, contentScale, emergeStart, markerPosition, wallPlane, yawToward,
 } from './marker-anchor'
 import {fitCylinderCentre, walkAroundObject} from './object-path'
-import {createStencil, stencilShape} from './stencil'
+import {createStencil, footDistanceAt, stencilShape} from './stencil'
 import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
@@ -65,12 +65,24 @@ const MAX_PHONE_HEIGHT = 2.2
 const POSTER_MAX_DIST = 6
 const POSTER_DISTANCE_AGREEMENT = 0.3
 const POSTER_READINGS_KEPT = 15
-/** ?debug, ML mode: seconds between two fits of the object to its tracked points. */
-const POINTS_FIT_SECONDS = 1
-/** ML mode: the object counts as in the stencil after this many frames running at this confidence. */
-const STENCIL_FRAMES = 2
-const ML_THRESHOLD = 0.6
+/**
+ * ML mode: the object counts as in the stencil after this many frames running at this confidence.
+ * Two frames at 0.6 fired before the object sat in the outline, and it was placed beside it.
+ */
+const STENCIL_FRAMES = 3
+const STENCIL_THRESHOLD = 0.8
 const STENCIL_INTERVAL_MS = 500
+/**
+ * ML mode, after placing: the object follows its own tracked points (fitCylinderCentre), which
+ * are seen from more sides as the visitor walks about, so the depth a single ray guessed is
+ * corrected and the world's slow drift is too. Only with enough points, never further than a few
+ * radii from where it was placed (further is likely the wall or a neighbour), and eased.
+ */
+const FOLLOW_SECONDS = 1
+const FOLLOW_MIN_POINTS = 30
+const FOLLOW_MAX_DRIFT_RADII = 2
+const FOLLOW_MAX_STEP_RADII = 0.5
+const FOLLOW_RATE = 2              // 1/s
 /** ML mode: room between the object's surface and the creature's centre, in creature heights. */
 const OBJECT_CLEARANCE_SHARE = 0.5
 
@@ -231,8 +243,9 @@ const scanPipelineModule = () => {
   let posterScale = 0          // ML mode: the poster's width (median of sound detail.scale readings), scene units
   const posterScales = []      // ML mode: the latest sound readings of it
   let pendingTap = null        // ML mode: where the visitor tapped before the object was recognised
-  let pointsFit = null         // ?debug, ML mode: the object as its tracked points place it (updatePointsFit)
+  let objectFit = null         // ML mode, once placed: where the object stands, following its points (followObject)
   let stencil = null           // ML mode: the outline the visitor fits the object into (stencil.js)
+  let stencilUnitsPerMetre = 0 // ML mode: the scale the stencil gave (onRecognised), 0 until then
   let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
   let worldJumps = 0
   const trackingLog = []       // ?debug: the latest changes of tracking status
@@ -270,7 +283,7 @@ const scanPipelineModule = () => {
     const onFrame = (best, ms) => {
       debug?.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}% (${best.crop}), ${ms.toFixed(0)} ms`)
       if (state !== 'found') return
-      const hit = best.className === exhibit.mlTarget && best.probability >= ML_THRESHOLD
+      const hit = best.className === exhibit.mlTarget && best.probability >= STENCIL_THRESHOLD
       streak = hit ? streak + 1 : 0
       stencil?.setMatched(hit)
       if (streak >= STENCIL_FRAMES) {
@@ -278,7 +291,7 @@ const scanPipelineModule = () => {
       }
     }
     mlDetectorStop = startDetection(renderer.domElement, () => {}, {
-      onFrame, threshold: ML_THRESHOLD, intervalMs: STENCIL_INTERVAL_MS, screenRegion: shape.crop, showInput: !!debug,
+      onFrame, threshold: STENCIL_THRESHOLD, intervalMs: STENCIL_INTERVAL_MS, screenRegion: shape.crop, showInput: !!debug,
     })
   }
 
@@ -298,6 +311,16 @@ const scanPipelineModule = () => {
     debug?.set('ml', `${best.className} ${(best.probability * 100).toFixed(0)}%`)
     const point = pendingTap ?? floorPointAt(view.left + shape.centreX, view.top + shape.footY)
     removeStencil()
+    if (point && !pendingTap) {
+      // The object fills the outline, so the camera is about shape.distance metres from its middle,
+      // and the foot is a known distance further: a scale that does not depend on the poster (which
+      // on the phone was sometimes far off).
+      const {camera} = XR8.Threejs.xrScene()
+      const tilt = Math.asin(THREE.MathUtils.clamp(-camera.getWorldDirection(forward).y, 0, 1))
+      const metres = footDistanceAt({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, shape.distance, tilt)
+      stencilUnitsPerMetre = camera.position.distanceTo(point) / metres
+      debug?.set('units per metre', `${unitsPerMetre().toFixed(2)} (${posterScale > 0 ? 'poster' : `stencil, ${stencilUnitsPerMetre.toFixed(2)}`})`)
+    }
     if (point) {
       standObjectAt(point)
       return
@@ -307,14 +330,20 @@ const scanPipelineModule = () => {
     hint.setText(TEXT.scanTapObject)
   }
 
-  /** How many scene units a metre is in this session: 1 at the metre scale, else from the poster's reported width. */
+  /**
+   * How many scene units a metre is in this session: 1 at the metre scale; else from the poster's
+   * reported width when a reading of it was sound, else from the stencil the object was fitted
+   * into, else a guess from the start height.
+   */
   const unitsPerMetre = () => {
     if (absoluteScale) {
       return 1
     }
-    return posterScale > 0 && exhibit?.posterWidth > 0
-      ? THREE.MathUtils.clamp(posterScale / exhibit.posterWidth,
-        DEFAULT_UNITS_PER_METRE / UNITS_PER_METRE_RANGE, DEFAULT_UNITS_PER_METRE * UNITS_PER_METRE_RANGE)
+    const measured = posterScale > 0 && exhibit?.posterWidth > 0
+      ? posterScale / exhibit.posterWidth
+      : stencilUnitsPerMetre
+    return measured > 0
+      ? THREE.MathUtils.clamp(measured, DEFAULT_UNITS_PER_METRE / UNITS_PER_METRE_RANGE, DEFAULT_UNITS_PER_METRE * UNITS_PER_METRE_RANGE)
       : DEFAULT_UNITS_PER_METRE
   }
 
@@ -568,6 +597,7 @@ const scanPipelineModule = () => {
       occluder.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: 0x00ffff, wireframe: true})))
     }
     scene.add(occluder)
+    return occluder
   }
 
   /**
@@ -585,17 +615,19 @@ const scanPipelineModule = () => {
       floorY, radius: size.radius, clearance,
     })
     const {scene} = XR8.Threejs.xrScene()
-    addObjectOccluder(scene, centre, size)
+    objectFit = {
+      placedAt: centre.clone(), centre: centre.clone(), target: centre.clone(),
+      fromCentreToAnchor: anchor.clone().sub(centre), floorY, size, secondsSince: FOLLOW_SECONDS,
+      occluder: addObjectOccluder(scene, centre, size), mesh: null,
+    }
     if (debug) {
-      pointsFit = {
-        guess: centre, floorY, size, secondsSince: POINTS_FIT_SECONDS,
-        mesh: new THREE.Mesh(
-          new THREE.CylinderGeometry(size.radius, size.radius, size.height, 32),
-          new THREE.MeshBasicMaterial({color: 0xff44cc, wireframe: true})
-        ),
-      }
-      pointsFit.mesh.visible = false
-      scene.add(pointsFit.mesh)
+      // The raw fit, before easing and limits: magenta beside the cyan occluder.
+      objectFit.mesh = new THREE.Mesh(
+        new THREE.CylinderGeometry(size.radius, size.radius, size.height, 32),
+        new THREE.MeshBasicMaterial({color: 0xff44cc, wireframe: true})
+      )
+      objectFit.mesh.visible = false
+      scene.add(objectFit.mesh)
     }
     const yaw = yawToward(anchor, camera.position)
     debug?.set('object anchor', `centre=${centre.x.toFixed(2)},${floorY.toFixed(2)},${centre.z.toFixed(2)} r=${size.radius.toFixed(2)} h=${size.height.toFixed(2)} anchor=${anchor.x.toFixed(2)},${anchor.z.toFixed(2)} camY=${camera.position.y.toFixed(2)}`)
@@ -603,27 +635,45 @@ const scanPipelineModule = () => {
   }
 
   /**
-   * ?debug, ML mode: where the object's tracked points say it stands, drawn as a magenta wireframe
-   * beside the cyan one from the tap, to see on the phone whether snapping to the points would
-   * place it better. Placement itself still uses the tap.
+   * ML mode, after placing: the object (its occluder, and the creature's spot beside it) follows
+   * where its own tracked points say it stands (see FOLLOW_SECONDS for why and within what limits).
+   *
+   * @param {number} dt - Seconds since the last frame.
    */
-  const updatePointsFit = (dt) => {
-    pointsFit.secondsSince += dt
-    if (pointsFit.secondsSince < POINTS_FIT_SECONDS) {
+  const followObject = (dt) => {
+    const fit = objectFit
+    fit.centre.lerp(fit.target, 1 - Math.exp(-dt * FOLLOW_RATE))
+    fit.occluder.position.x = fit.centre.x
+    fit.occluder.position.z = fit.centre.z
+    exhibitModule.moveAnchor(fit.centre.clone().add(fit.fromCentreToAnchor).setY(fit.floorY))
+
+    fit.secondsSince += dt
+    if (fit.secondsSince < FOLLOW_SECONDS) {
       return
     }
-    pointsFit.secondsSince = 0
-    const {guess, floorY, size, mesh} = pointsFit
+    fit.secondsSince = 0
     const {camera} = XR8.Threejs.xrScene()
-    const fit = fitCylinderCentre(worldPoints, guess, {floorY, ...size, viewer: camera.position})
-    mesh.visible = !!fit
-    if (!fit) {
-      debug.set('points fit', 'too few points on the object')
+    const {radius, height} = fit.size
+    const found = fitCylinderCentre(worldPoints, fit.target, {floorY: fit.floorY, radius, height, viewer: camera.position})
+    if (fit.mesh) {
+      fit.mesh.visible = !!found
+      found && fit.mesh.position.set(found.centre.x, fit.floorY + height / 2, found.centre.z)
+    }
+    const cm = (a, b) => ((Math.hypot(a.x - b.x, a.z - b.z) / unitsPerMetre()) * 100).toFixed(0)
+    if (!found || found.count < FOLLOW_MIN_POINTS) {
+      debug?.set('follow', `${found ? found.count : 'too few'} points on the object: not followed`)
       return
     }
-    mesh.position.set(fit.centre.x, floorY + size.height / 2, fit.centre.z)
-    const shift = Math.hypot(fit.centre.x - guess.x, fit.centre.z - guess.z)
-    debug.set('points fit', `${fit.count} points, ${((shift / unitsPerMetre()) * 100).toFixed(0)} cm from the tap`)
+    if (Math.hypot(found.centre.x - fit.placedAt.x, found.centre.z - fit.placedAt.z) > radius * FOLLOW_MAX_DRIFT_RADII) {
+      debug?.set('follow', `${found.count} points, but ${cm(found.centre, fit.placedAt)} cm from where it was placed: not followed`)
+      return
+    }
+    const step = found.centre.clone().sub(fit.target).setY(0)
+    if (step.length() > radius * FOLLOW_MAX_STEP_RADII) {
+      step.setLength(radius * FOLLOW_MAX_STEP_RADII)
+    }
+    fit.target.add(step)
+    debug?.set('follow', `${found.count} points; moved ${cm(fit.target, fit.placedAt)} cm from where it was placed`)
   }
 
   /** Object mode: once the exhibit is recognised, anchor the creature right in front of it. */
@@ -766,8 +816,8 @@ const scanPipelineModule = () => {
       }
       if (state === 'placed') {
         exhibitModule.onUpdate()
-        if (pointsFit) {
-          updatePointsFit(dt)
+        if (objectFit) {
+          followObject(dt)
         }
         return
       }

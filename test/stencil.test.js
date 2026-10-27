@@ -1,5 +1,5 @@
 import {
-  CENTRE_SHARE, MAX_DISTANCE, MAX_HEIGHT_SHARE, MIN_DISTANCE, PREFERRED_DISTANCE, stencilShape,
+  CENTRE_SHARE, MAX_DISTANCE, MAX_HEIGHT_SHARE, MIN_DISTANCE, PREFERRED_DISTANCE, VIEW_TILT, footDistanceAt, stencilShape,
 } from '../src/stencil.js'
 
 let failures = 0
@@ -25,6 +25,17 @@ check('as wide as the object at that distance', near(shape.width, 2 * purifier.r
 const {crop} = shape
 check('the classifier\'s square holds the whole outline', crop.x <= shape.centreX - shape.width / 2 && crop.x + crop.size >= shape.centreX + shape.width / 2 &&
   crop.y <= top && crop.y + crop.size >= shape.footY)
+
+// The camera at `distance` from the object's middle, VIEW_TILT down: the foot is footDistance away.
+check('the foot distance: a little more than the drawn distance', shape.footDistance > shape.distance && shape.footDistance < shape.distance + purifier.height,
+  shape.footDistance.toFixed(3))
+check('footDistanceAt at the drawn tilt is the shape\'s', near(footDistanceAt(purifier, shape.distance, VIEW_TILT), shape.footDistance))
+const steep = footDistanceAt(purifier, shape.distance, 0.9)
+const level = footDistanceAt(purifier, shape.distance, 0.4)
+check('looking further down, the foot is further', steep > level, `${level.toFixed(3)} .. ${steep.toFixed(3)}`)
+// A camera 1.3 m from the middle of a 49 cm object, 0.7 rad down: the foot by plain geometry.
+const cameraAt = {x: 1.3 * Math.cos(0.7), y: 1.3 * Math.sin(0.7) + 0.245}
+check('it matches the geometry', near(footDistanceAt(purifier, 1.3, 0.7), Math.hypot(cameraAt.x - 0.13, cameraAt.y), 1e-9))
 
 const tall = stencilShape({radius: 0.4, height: 2}, projection, view)
 const tallTotal = tall.footY - (tall.topY - tall.capHeight / 2)

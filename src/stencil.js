@@ -16,8 +16,11 @@ export const MAX_HEIGHT_SHARE = 0.36
 export const CENTRE_SHARE = 0.42
 /** How far down a visitor looks at an object on the floor (radians, about 35°): it shows its top. */
 export const VIEW_TILT = 0.6
-/** The square the classifier gets is this much bigger than the outline, for a hand that is not still. */
-export const CROP_MARGIN = 1.25
+/**
+ * The square the classifier gets is this much bigger than the outline. Close to it: with a wider
+ * square the classifier saw the object before it sat in the outline, and it was placed beside it.
+ */
+export const CROP_MARGIN = 1.1
 
 /**
  * @typedef {Object} StencilShape
@@ -30,7 +33,23 @@ export const CROP_MARGIN = 1.25
  *   the floor.
  * @property {{x: number, y: number, size: number}} crop - The square (CSS px) the classifier looks at.
  * @property {number} distance - Metres the outline is drawn for.
+ * @property {number} footDistance - Metres from the camera to the object's near foot when the object
+ *   fills the outline, looking VIEW_TILT down (see footDistanceAt for the real tilt).
  */
+
+/**
+ * Metres from the camera to the object's near foot when the object fills an outline drawn for
+ * `distance`, the camera looking `tilt` down at its middle. With the same distance in scene units
+ * (the ray to the outline's foot) it gives units per metre. The tilt matters (0.4 to 0.9 rad
+ * changes it by about 9%), so the camera's real one is used.
+ *
+ * @param {{radius: number, height: number}} size - The object, metres.
+ * @param {number} distance - Metres, the outline's `distance`.
+ * @param {number} tilt - Radians below the horizon.
+ * @returns {number} Metres.
+ */
+export const footDistanceAt = ({radius, height}, distance, tilt) =>
+  Math.hypot(distance * Math.cos(tilt) - radius, distance * Math.sin(tilt) + height / 2)
 
 /**
  * The outline of an upright cylinder as it looks from `distance` away, looking down at it a little.
@@ -68,8 +87,9 @@ export const stencilShape = ({radius, height}, projection, view) => {
   const topY = middle - total / 2 + capHeight / 2
   const bottomY = topY + bodyHeight
   const side = Math.max(width, total) * CROP_MARGIN
+  const footDistance = footDistanceAt({radius, height}, distance, VIEW_TILT)
   return {
-    centreX, width, topY, bottomY, capHeight, footY: bottomY + capHeight / 2, distance,
+    centreX, width, topY, bottomY, capHeight, footY: bottomY + capHeight / 2, distance, footDistance,
     crop: {x: centreX - side / 2, y: middle - side / 2, size: side},
   }
 }
