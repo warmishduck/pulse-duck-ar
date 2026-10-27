@@ -83,6 +83,26 @@ export const floorHeight = (heights, cameraHeight) => {
   return crowded ? median(best) : null
 }
 
+/** How far round a spot (scene units, along the floor) localFloorHeight looks for the floor. */
+export const LOCAL_FLOOR_RADIUS = 1
+
+/**
+ * The floor's height round one spot, from the tracked points near it (floorHeight on just those).
+ * The floor measured at the start can be off by the time the visitor taps an object, or be a
+ * different surface; the points round the object's foot show the floor it really stands on.
+ *
+ * @param {{position: {x: number, y: number, z: number}}[]} points - The tracked world points.
+ * @param {{x: number, z: number}} spot
+ * @param {number} cameraHeight - The camera's world `y`.
+ * @returns {number | null} null when the points there show no clear floor.
+ */
+export const localFloorHeight = (points, spot, cameraHeight) => floorHeight(
+  points
+    .filter(({position}) => Math.hypot(position.x - spot.x, position.z - spot.z) <= LOCAL_FLOOR_RADIUS)
+    .map(({position}) => position.y),
+  cameraHeight
+)
+
 /**
  * How far away the surface behind an object really is: the median distance of the tracked world
  * points that lie in the object's direction. The direction of an image target's position is

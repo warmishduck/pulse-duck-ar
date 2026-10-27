@@ -2,7 +2,7 @@ import * as THREE from 'three'
 
 import {
   CONTENT_DEPTH_SHARE, MAX_DISTANCE, MAX_HEIGHT_SHARE, MIN_DISTANCE, MIN_SCALE, WALL_GAP,
-  floorHeight, floorSpot, median, wallDistance,
+  LOCAL_FLOOR_RADIUS, floorHeight, floorSpot, localFloorHeight, median, wallDistance,
 } from '../src/floor-spot.js'
 
 let failures = 0
@@ -133,6 +133,19 @@ check('the target as a plain object, the way an 8th Wall event delivers it',
 check('too few points there: no distance', wallDistance(wallPoints.slice(0, 4), origin, toObject) === null)
 check('a handful is enough', wallDistance(wallPoints.slice(0, 5), origin, toObject) !== null)
 check('no points: no distance', wallDistance([], origin, toObject) === null)
+
+// ---------------------------------------------------------------- the floor round one spot
+// The real floor at y = 0 round the object at (1, 0, -2); far off, a low table top at y = 0.35 with
+// more points than the floor near the object, which the whole-view floorHeight would take.
+const at = (x, y, z) => ({position: {x, y, z}})
+const nearFloor = Array.from({length: 12}, (_, i) => at(1 + (i % 4) * 0.15 - 0.2, (i % 3) * 0.02, -2 + Math.floor(i / 4) * 0.15))
+const objectSide = Array.from({length: 8}, (_, i) => at(1.1, 0.1 + i * 0.1, -2.1))
+const tableFar = Array.from({length: 30}, (_, i) => at(-2 + (i % 6) * 0.1, 0.35, -1 + Math.floor(i / 6) * 0.1))
+const all = [...nearFloor, ...objectSide, ...tableFar]
+check('the whole view picks the crowded table top', Math.abs(floorHeight(all.map((p) => p.position.y), 2) - 0.35) < 0.05)
+const local = localFloorHeight(all, {x: 1, z: -2}, 2)
+check('round the object it finds the real floor', local !== null && Math.abs(local - 0.02) < 0.03, String(local))
+check('far from any points: no floor', localFloorHeight(all, {x: 1 + LOCAL_FLOOR_RADIUS * 5, z: 5}, 2) === null)
 
 console.log(failures === 0 ? '\nALL FLOOR SPOT CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures ? 1 : 0)

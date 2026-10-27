@@ -26,7 +26,7 @@ import {CREATURES} from './content/creatures.js'
 import {IMAGE_TARGET_DATA} from './image-targets'
 import {routeFromImageTarget} from './route'
 import {TEXT} from './i18n'
-import {FLOOR_PITCH, floorHeight, floorSpot, median, wallDistance} from './floor-spot'
+import {FLOOR_PITCH, floorHeight, floorSpot, localFloorHeight, median, wallDistance} from './floor-spot'
 import {
   MARKER_SEARCH_ANGLE, MIN_MARKER_POINTS, contentScale, emergeStart, markerPosition, wallPlane, yawToward,
 } from './marker-anchor'
@@ -280,11 +280,14 @@ const scanPipelineModule = () => {
       : DEFAULT_UNITS_PER_METRE
   }
 
-  /** ML mode: the object stands at this floor point (its near edge); glow there, then place. */
+  /**
+   * ML mode: the object stands at this floor point (its near edge; `y` is the floor there); glow
+   * there, then place.
+   */
   const standObjectAt = (point) => {
     objectPosition.copy(point)
     const height = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}.height * unitsPerMetre()
-    glow.show({position: point.clone().setY(currentFloorY() + height / 2), scale: height})
+    glow.show({position: point.clone().setY(point.y + height / 2), scale: height})
     state = 'found_object'
     objectFoundSeconds = 0
   }
@@ -307,12 +310,21 @@ const scanPipelineModule = () => {
       -((event.clientY - rect.top) / rect.height) * 2 + 1
     ), camera)
     const {origin, direction} = tapRaycaster.ray
-    const floorY = currentFloorY()
-    const along = direction.y < -1e-3 ? (floorY - origin.y) / direction.y : -1
-    const onFloor = origin.clone().addScaledVector(direction, along)
-    const reach = Math.hypot(onFloor.x - origin.x, onFloor.z - origin.z)
-    debug?.set('tap', along > 0 ? `floor at ${reach.toFixed(2)} away` : 'above the horizon')
-    if (along <= 0 || reach > OBJECT_MAX_DIST) {
+    const rayToFloor = (floorY) => {
+      const along = direction.y < -1e-3 ? (floorY - origin.y) / direction.y : -1
+      return along > 0 ? origin.clone().addScaledVector(direction, along) : null
+    }
+    // The floor measured at the start can be off by now (on the phone the pinecone then stood in
+    // the air): the points round the tapped spot say how high the floor is there.
+    const startFloor = currentFloorY()
+    const first = rayToFloor(startFloor)
+    const localFloor = first ? localFloorHeight(worldPoints, first, origin.y) : null
+    const onFloor = localFloor === null ? first : rayToFloor(localFloor)
+    const reach = onFloor ? Math.hypot(onFloor.x - origin.x, onFloor.z - origin.z) : Infinity
+    debug?.set('tap', onFloor
+      ? `floor at ${reach.toFixed(2)} away; floor there ${localFloor === null ? 'not seen' : `y=${localFloor.toFixed(2)}`} (start ${startFloor.toFixed(2)})`
+      : 'above the horizon')
+    if (!onFloor || reach > OBJECT_MAX_DIST) {
       return
     }
     if (early) {
@@ -513,7 +525,7 @@ const scanPipelineModule = () => {
    * stand on the floor in front of it, facing the visitor (object-path.js).
    */
   const placeAroundObject = (camera) => {
-    const floorY = currentFloorY()
+    const floorY = objectPosition.y   // the floor where the visitor tapped (onObjectTap)
     const metres = {...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}
     const size = {radius: metres.radius * unitsPerMetre(), height: metres.height * unitsPerMetre()}
     // Sized in the same units as the object, so the two keep their real proportion.
