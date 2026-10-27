@@ -64,6 +64,8 @@ export const walkAroundObject = (nearFace, cameraPosition, {floorY, radius, clea
 export const MIN_FIT_POINTS = 6
 /** Points this far from the guessed centre (in radii) and no further can be on the object. */
 export const FIT_SEARCH_RADII = 3
+/** How far off the fitted circle (in radii) a point may lie and still count, round after round. */
+export const FIT_INLIER_SHARES = [0.6, 0.35, 0.2]
 /** Points lower than this share of the object's height are taken to be floor. */
 export const FIT_MIN_HEIGHT_SHARE = 0.1
 
@@ -98,16 +100,31 @@ export const fitCylinderCentre = (points, guess, {floorY, radius, height, viewer
   // Each point pulls the centre to one radius behind it, as seen from the current centre.
   let x = middleX + ((middleX - viewer.x) / away) * radius
   let z = middleZ + ((middleZ - viewer.z) / away) * radius
-  for (let round = 0; round < 20; round++) {
-    let sumX = 0
-    let sumZ = 0
-    side.forEach((p) => {
-      const length = Math.hypot(p.x - x, p.z - z) || 1e-9
-      sumX += p.x - ((p.x - x) / length) * radius
-      sumZ += p.z - ((p.z - z) / length) * radius
-    })
-    x = sumX / side.length
-    z = sumZ / side.length
+  // Points of a wall or a neighbour behind the object pull a plain fit off it (on the phone the
+  // purifier stood in a corner), so after a first fit only the points near its circle are kept,
+  // and the tolerance narrows round by round.
+  let used = side
+  const fitTo = (points, rounds) => {
+    for (let round = 0; round < rounds; round++) {
+      let sumX = 0
+      let sumZ = 0
+      points.forEach((p) => {
+        const length = Math.hypot(p.x - x, p.z - z) || 1e-9
+        sumX += p.x - ((p.x - x) / length) * radius
+        sumZ += p.z - ((p.z - z) / length) * radius
+      })
+      x = sumX / points.length
+      z = sumZ / points.length
+    }
   }
-  return {centre: new THREE.Vector3(x, floorY, z), count: side.length}
+  fitTo(used, 20)
+  for (const share of FIT_INLIER_SHARES) {
+    const inliers = side.filter((p) => Math.abs(Math.hypot(p.x - x, p.z - z) - radius) <= radius * share)
+    if (inliers.length < MIN_FIT_POINTS) {
+      break
+    }
+    used = inliers
+    fitTo(used, 10)
+  }
+  return {centre: new THREE.Vector3(x, floorY, z), count: used.length}
 }

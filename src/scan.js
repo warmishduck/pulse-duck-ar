@@ -79,8 +79,8 @@ const STENCIL_INTERVAL_MS = 500
  * radii from where it was placed (further is likely the wall or a neighbour), and eased.
  */
 const FOLLOW_SECONDS = 1
-const FOLLOW_MIN_POINTS = 30
-const FOLLOW_MAX_DRIFT_RADII = 2
+const FOLLOW_MIN_POINTS = 15   // points on the circle only, now that wall points are dropped
+const FOLLOW_MAX_DRIFT_RADII = 4   // 2 was reached on the phone walking round the purifier
 const FOLLOW_MAX_STEP_RADII = 0.5
 const FOLLOW_RATE = 2              // 1/s
 /** ML mode: room between the object's surface and the creature's centre, in creature heights. */

@@ -54,6 +54,15 @@ const wall = Array.from({length: 4}, (_, i) => ({position: {x: truth.x - 0.4 + i
 const withWall = fitCylinderCentre([...side, ...wall], guess, size)
 check('a few wall points nearby shift it only a little', withWall && Math.hypot(withWall.centre.x - truth.x, withWall.centre.z - truth.z) < 0.08,
   withWall ? `off by ${Math.hypot(withWall.centre.x - truth.x, withWall.centre.z - truth.z).toFixed(3)}` : 'no fit')
+// The purifier in a corner: a wall 8 cm behind it and another beside it, as many points as the object.
+const cornerWall = [
+  ...Array.from({length: 16}, (_, i) => ({position: {x: truth.x - 0.5 + i * 0.07, y: 0.2 + (i % 5) * 0.15, z: truth.z - 0.36}})),
+  ...Array.from({length: 10}, (_, i) => ({position: {x: truth.x - 0.36, y: 0.2 + (i % 5) * 0.15, z: truth.z - 0.3 + i * 0.06}})),
+]
+const inCorner = fitCylinderCentre([...side, ...cornerWall], guess, size)
+const cornerOff = inCorner && Math.hypot(inCorner.centre.x - truth.x, inCorner.centre.z - truth.z)
+check('in a corner: the wall points are dropped and the fit stays on the object', cornerOff !== null && cornerOff < 0.03,
+  inCorner ? `off by ${cornerOff.toFixed(3)}, ${inCorner.count} points kept of ${side.length + cornerWall.length}` : 'no fit')
 check('too few points: no fit', fitCylinderCentre(side.slice(0, MIN_FIT_POINTS - 1), guess, size) === null)
 const farGuess = {x: truth.x + 0.5, z: truth.z + 0.05}   // a tap about 24 cm off, to the side
 const farFit = fitCylinderCentre(side, farGuess, size)
