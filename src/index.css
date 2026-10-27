@@ -411,6 +411,39 @@ body.welcome-page {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 116px);
 }
 
+/* The stencil (stencil.js): an outline the visitor fits the exhibit object into. */
+.ui-stencil {
+  position: fixed;
+  z-index: 5;
+  pointer-events: none;   /* taps still reach the AR canvas */
+  overflow: visible;
+}
+.ui-stencil path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 3;
+  stroke-dasharray: 12 8;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(0, 0, 0, 0.6));
+  transition: stroke 0.2s;
+}
+.ui-stencil.is-matched path {
+  stroke: #8dffb0;
+  stroke-dasharray: none;
+}
+
+/* ?debug: what the object classifier is given (object-detector.js showInput). */
+.ml-input-preview {
+  position: fixed;
+  left: 8px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  width: 96px;
+  height: 96px;
+  border: 2px solid #8dffb0;
+  z-index: 101;
+  pointer-events: none;
+}
+
 .ui-button {
   position: absolute;
   width: 44px;

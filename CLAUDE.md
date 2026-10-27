@@ -50,6 +50,7 @@ src/
   floor-spot.js           Pure maths: where on the floor the scanner places content (tested)
   marker-anchor.js        Pure maths for /?scan&marker: wall plane, marker position, walk-out start (tested)
   object-path.js          Pure maths for ML exhibits: the walk from behind a free-standing object round to its front (tested)
+  stencil.js              ML exhibits: the outline the visitor fits the object into (shape maths tested) and its SVG overlay
   ml/
     model-config.js       URL of the Teachable Machine model
     object-detector.js    Cuts camera frames and hands them to the worker; loadModel / startDetection
@@ -352,9 +353,9 @@ Tests live in `test/`. They run in Node (no browser, no 8th Wall).
 `config.test.js` checks i18n keys, exhibit codes, routing (incl. `?scan` and
 image-target lookup). `puzzle-logic.test.js` and `platformer.test.js` cover game logic.
 `floor-spot.test.js` covers the scanner's floor-placement maths, `marker-anchor.test.js` the marker flow's,
-`object-path.test.js` the walk round an ML-recognised object.
+`object-path.test.js` the walk round an ML-recognised object, `stencil.test.js` the stencil's shape.
 
-The `test` script in `package.json` lists the six files by name, so a new test file
+The `test` script in `package.json` lists the seven files by name, so a new test file
 is not run until it is added there.
 
 When adding a new i18n key, the test will fail until all four languages have it.

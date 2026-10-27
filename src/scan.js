@@ -16,9 +16,10 @@
 // walks out through it (see marker-anchor.js).
 //
 // `/?scan&c=<code>` of an exhibit with an `mlTarget` is the ML flow: after the poster, a classifier
-// (ml/object-detector.js) watches for the free-standing object itself; once it sees it, the visitor
-// taps where the object stands on the floor, and the creature walks out from behind it and round it
-// (object-path.js). Sizes are in metres, turned into scene units by the poster's reported width.
+// (ml/object-detector.js) looks inside a stencil (stencil.js) the visitor fits the free-standing
+// object into; once it sees it there, the object stands where the stencil's bottom edge meets the
+// floor, and the creature walks out from behind it and round it (object-path.js). Tapping where the
+// object stands is the fallback. Sizes are in metres, turned into scene units by the poster's width.
 
 import * as THREE from 'three'
 
@@ -31,6 +32,7 @@ import {
   MARKER_SEARCH_ANGLE, MIN_MARKER_POINTS, contentScale, emergeStart, markerPosition, wallPlane, yawToward,
 } from './marker-anchor'
 import {fitCylinderCentre, walkAroundObject} from './object-path'
+import {createStencil, stencilShape} from './stencil'
 import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
@@ -65,6 +67,10 @@ const POSTER_DISTANCE_AGREEMENT = 0.3
 const POSTER_READINGS_KEPT = 15
 /** ?debug, ML mode: seconds between two fits of the object to its tracked points. */
 const POINTS_FIT_SECONDS = 1
+/** ML mode: the object counts as in the stencil after this many frames running at this confidence. */
+const STENCIL_FRAMES = 2
+const ML_THRESHOLD = 0.6
+const STENCIL_INTERVAL_MS = 500
 /** ML mode: room between the object's surface and the creature's centre, in creature heights. */
 const OBJECT_CLEARANCE_SHARE = 0.5
 
@@ -226,6 +232,7 @@ const scanPipelineModule = () => {
   const posterScales = []      // ML mode: the latest sound readings of it
   let pendingTap = null        // ML mode: where the visitor tapped before the object was recognised
   let pointsFit = null         // ?debug, ML mode: the object as its tracked points place it (updatePointsFit)
+  let stencil = null           // ML mode: the outline the visitor fits the object into (stencil.js)
   let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
   let worldJumps = 0
   const trackingLog = []       // ?debug: the latest changes of tracking status
@@ -251,22 +258,53 @@ const scanPipelineModule = () => {
       return
     }
     if (state !== 'found' || !exhibit?.mlTarget) return
-    const {renderer} = XR8.Threejs.xrScene()
-    const onFrame = debug && ((best, ms) => debug.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}% (square ${best.crop}), ${ms.toFixed(0)} ms`))
-    mlDetectorStop = startDetection(renderer.domElement, (className, confidence) => {
-      if (state !== 'found' || className !== exhibit.mlTarget) return
-      // The classifier only says the object is in view, not where: the visitor shows that.
-      mlDetectorStop()
-      mlDetectorStop = null
-      debug?.set('ml', `${className} ${(confidence * 100).toFixed(0)}%`)
-      if (pendingTap) {
-        standObjectAt(pendingTap)
-        return
+    const {renderer, camera} = XR8.Threejs.xrScene()
+    // The stencil: the visitor fits the object into it, and the classifier looks only inside it,
+    // so a similar object beside it does not count (stencil.js).
+    const view = canvas.getBoundingClientRect()
+    const shape = stencilShape({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, camera.projectionMatrix.elements, view)
+    stencil = createStencil(shape, view)
+    hint.setText(TEXT.scanFitObject)
+    debug?.set('stencil', `drawn for ${shape.distance.toFixed(1)} m, foot at y=${shape.footY.toFixed(0)} px`)
+    let streak = 0
+    const onFrame = (best, ms) => {
+      debug?.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}% (${best.crop}), ${ms.toFixed(0)} ms`)
+      if (state !== 'found') return
+      const hit = best.className === exhibit.mlTarget && best.probability >= ML_THRESHOLD
+      streak = hit ? streak + 1 : 0
+      stencil?.setMatched(hit)
+      if (streak >= STENCIL_FRAMES) {
+        onRecognised(best, shape, view)
       }
-      state = 'tap_object'
-      debug?.set('state', state)
-      hint.setText(TEXT.scanTapObject)
-    }, {onFrame})
+    }
+    mlDetectorStop = startDetection(renderer.domElement, () => {}, {
+      onFrame, threshold: ML_THRESHOLD, intervalMs: STENCIL_INTERVAL_MS, screenRegion: shape.crop, showInput: !!debug,
+    })
+  }
+
+  const removeStencil = () => {
+    stencil?.remove()
+    stencil = null
+  }
+
+  /**
+   * ML mode: the object sat in the stencil for STENCIL_FRAMES frames running. It stands where the
+   * stencil's bottom edge meets the floor (or where the visitor tapped, if they did); if that misses
+   * the floor, the visitor is asked to tap instead.
+   */
+  const onRecognised = (best, shape, view) => {
+    mlDetectorStop()
+    mlDetectorStop = null
+    debug?.set('ml', `${best.className} ${(best.probability * 100).toFixed(0)}%`)
+    const point = pendingTap ?? floorPointAt(view.left + shape.centreX, view.top + shape.footY)
+    removeStencil()
+    if (point) {
+      standObjectAt(point)
+      return
+    }
+    state = 'tap_object'
+    debug?.set('state', state)
+    hint.setText(TEXT.scanTapObject)
   }
 
   /** How many scene units a metre is in this session: 1 at the metre scale, else from the poster's reported width. */
@@ -293,21 +331,20 @@ const scanPipelineModule = () => {
   }
 
   /**
-   * ML mode: the visitor tapped where the object stands on the floor. The tap's ray meets the
-   * floor at the object's near edge, exactly enough for any height of object, unlike the ray to
-   * some point up its side. A tap before the classifier has recognised the object is kept for
-   * when it does, so it is not lost.
+   * ML mode: where the floor is under a point of the screen at which the object's near edge meets
+   * the floor (the stencil's bottom edge, or a tap there). That ray meets the floor at the object's
+   * near edge, exactly enough for any height of object, unlike the ray to some point up its side.
+   *
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {THREE.Vector3 | null} null above the horizon or too far away; `y` is the floor there.
    */
-  const onObjectTap = (event) => {
-    const early = state === 'found' && exhibit?.mlTarget
-    if (state !== 'tap_object' && !early) {
-      return
-    }
+  const floorPointAt = (clientX, clientY) => {
     const {camera} = XR8.Threejs.xrScene()
     const rect = canvas.getBoundingClientRect()
     tapRaycaster.setFromCamera(new THREE.Vector2(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
     ), camera)
     const {origin, direction} = tapRaycaster.ray
     const rayToFloor = (floorY) => {
@@ -321,10 +358,23 @@ const scanPipelineModule = () => {
     const localFloor = first ? localFloorHeight(worldPoints, first, origin.y) : null
     const onFloor = localFloor === null ? first : rayToFloor(localFloor)
     const reach = onFloor ? Math.hypot(onFloor.x - origin.x, onFloor.z - origin.z) : Infinity
-    debug?.set('tap', onFloor
+    debug?.set('foot', onFloor
       ? `floor at ${reach.toFixed(2)} away; floor there ${localFloor === null ? 'not seen' : `y=${localFloor.toFixed(2)}`} (start ${startFloor.toFixed(2)})`
       : 'above the horizon')
-    if (!onFloor || reach > OBJECT_MAX_DIST) {
+    return onFloor && reach <= OBJECT_MAX_DIST ? onFloor : null
+  }
+
+  /**
+   * ML mode, the fallback to the stencil: the visitor taps where the object stands on the floor.
+   * A tap before the object is recognised is kept for when it is, so it is not lost.
+   */
+  const onObjectTap = (event) => {
+    const early = state === 'found' && exhibit?.mlTarget
+    if (state !== 'tap_object' && !early) {
+      return
+    }
+    const onFloor = floorPointAt(event.clientX, event.clientY)
+    if (!onFloor) {
       return
     }
     if (early) {
@@ -651,6 +701,7 @@ const scanPipelineModule = () => {
 
   const placeExhibit = (anchor, options = {}) => {
     if (mlDetectorStop) { mlDetectorStop(); mlDetectorStop = null }
+    removeStencil()
     state = 'placed'
     debug?.set('state', state)
     debug?.set('anchor', anchor.position)
