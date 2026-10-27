@@ -55,7 +55,10 @@ const DEFAULT_OBJECT_SIZE = {radius: 0.15, height: 0.5}
  */
 const DEFAULT_UNITS_PER_METRE = 2 / 1.3
 /** ML mode: units per metre read off the poster stay within this factor of the default. */
-const UNITS_PER_METRE_RANGE = 2
+const UNITS_PER_METRE_RANGE = 1.5
+/** ML mode: a poster reading counts only if it puts the phone this high above the floor (metres). */
+const MIN_PHONE_HEIGHT = 0.8
+const MAX_PHONE_HEIGHT = 2.2
 /** ML mode: a poster reading counts only this close (scene units), and agreeing this well with the points. */
 const POSTER_MAX_DIST = 6
 const POSTER_DISTANCE_AGREEMENT = 0.3
@@ -407,15 +410,21 @@ const scanPipelineModule = () => {
       }
       // Only sound readings count: while tracking was lost the phone reported the poster 19 units
       // away at several times its size, and that one reading made the object three times too big.
+      // The engine's own distance is often wrong, and its size is wrong with it, so a reading needs
+      // the tracked points to agree, and the phone height it implies has to be one a hand holds.
+      const phoneHeight = detail.scale > 0 && exhibit.posterWidth > 0
+        ? (camera.position.y - currentFloorY()) / (detail.scale / exhibit.posterWidth)
+        : NaN
       const sound = tracking?.status === 'NORMAL' && reported <= POSTER_MAX_DIST &&
-        (distance === null || Math.abs(reported - distance) <= distance * POSTER_DISTANCE_AGREEMENT)
+        distance !== null && Math.abs(reported - distance) <= distance * POSTER_DISTANCE_AGREEMENT &&
+        phoneHeight >= MIN_PHONE_HEIGHT && phoneHeight <= MAX_PHONE_HEIGHT
       if (exhibit.mlTarget && detail.scale > 0 && sound) {
         posterScales.push(detail.scale)
         posterScales.splice(0, posterScales.length - POSTER_READINGS_KEPT)
         posterScale = median(posterScales)
         debug?.set('units per metre', `${unitsPerMetre().toFixed(2)} (${posterScales.length} readings)`)
       }
-      debug?.set('wall', `${distance === null ? 'no points there' : `${distance.toFixed(2)} from points`}; image target says ${reported.toFixed(2)}`)
+      debug?.set('wall', `${distance === null ? 'no points there' : `${distance.toFixed(2)} from points`}; image target says ${reported.toFixed(2)}; phone ${phoneHeight.toFixed(2)} m up; ${sound ? 'used' : 'not used'}`)
       glow.show(detail)
     }
   }
