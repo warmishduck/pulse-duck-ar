@@ -59,7 +59,7 @@ const DEFAULT_UNITS_PER_METRE = 2 / 1.3
 /** ML mode: units per metre read off the poster stay within this factor of the default. */
 const UNITS_PER_METRE_RANGE = 1.5
 /** ML mode: a poster reading counts only if it puts the phone this high above the floor (metres). */
-const MIN_PHONE_HEIGHT = 0.8
+const MIN_PHONE_HEIGHT = 1.0   // 0.9 passed on the phone and was 1.5x off
 const MAX_PHONE_HEIGHT = 2.2
 /** ML mode: a poster reading counts only this close (scene units), and agreeing this well with the points. */
 const POSTER_MAX_DIST = 6
@@ -319,7 +319,7 @@ const scanPipelineModule = () => {
       const tilt = Math.asin(THREE.MathUtils.clamp(-camera.getWorldDirection(forward).y, 0, 1))
       const metres = footDistanceAt({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, shape.distance, tilt)
       stencilUnitsPerMetre = camera.position.distanceTo(point) / metres
-      debug?.set('units per metre', `${unitsPerMetre().toFixed(2)} (${posterScale > 0 ? 'poster' : `stencil, ${stencilUnitsPerMetre.toFixed(2)}`})`)
+      debug?.set('units per metre', `${unitsPerMetre().toFixed(2)} (stencil; poster said ${posterScale > 0 ? (posterScale / exhibit.posterWidth).toFixed(2) : '-'})`)
     }
     if (point) {
       standObjectAt(point)
@@ -331,17 +331,19 @@ const scanPipelineModule = () => {
   }
 
   /**
-   * How many scene units a metre is in this session: 1 at the metre scale; else from the poster's
-   * reported width when a reading of it was sound, else from the stencil the object was fitted
-   * into, else a guess from the start height.
+   * How many scene units a metre is in this session: 1 at the metre scale; else from the stencil the
+   * object was fitted into, else from the poster's reported width when a reading of it was sound,
+   * else a guess from the start height.
    */
   const unitsPerMetre = () => {
     if (absoluteScale) {
       return 1
     }
-    const measured = posterScale > 0 && exhibit?.posterWidth > 0
-      ? posterScale / exhibit.posterWidth
-      : stencilUnitsPerMetre
+    // The stencil is measured right at the object; a poster reading that passed its checks still
+    // came out 1.5x off on the phone, so it is only the fallback (the tap flow has no stencil).
+    const measured = stencilUnitsPerMetre > 0
+      ? stencilUnitsPerMetre
+      : posterScale > 0 && exhibit?.posterWidth > 0 ? posterScale / exhibit.posterWidth : 0
     return measured > 0
       ? THREE.MathUtils.clamp(measured, DEFAULT_UNITS_PER_METRE / UNITS_PER_METRE_RANGE, DEFAULT_UNITS_PER_METRE * UNITS_PER_METRE_RANGE)
       : DEFAULT_UNITS_PER_METRE
