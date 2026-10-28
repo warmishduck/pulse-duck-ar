@@ -10,7 +10,30 @@
 // The input is prepared as Teachable Machine's own library does it (capture() in
 // @teachablemachine/image): a centre square of the frame at the model's size, scaled to -1..1.
 
-const TF_CDN = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js'
+// TF.js is pinned to one version and checked against its SHA-384 before it runs: a compromised CDN
+// must not be able to put its own code on visitors' phones (see "External scripts" in CLAUDE.md).
+// importScripts cannot check an integrity hash itself, so the file is fetched, hashed, and only then
+// loaded from a blob URL. To upgrade: change the version, then set the hash with
+//   curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+const TF_URL = 'https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js'
+const TF_SHA384 = 'vE8hbVJ4lezako5rlvE7bY0BVzWlFhZncPlckrqNwcUQpVtgbENTgZ8TBbnPjZre'
+
+/** Loads TF.js into the worker, or throws if the file is not the pinned one. */
+const importTf = async () => {
+  const bytes = await fetch(TF_URL).then((response) => {
+    if (!response.ok) {
+      throw new Error(`TF.js: HTTP ${response.status}`)
+    }
+    return response.arrayBuffer()
+  })
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-384', bytes))
+  if (btoa(String.fromCharCode(...digest)) !== TF_SHA384) {
+    throw new Error('TF.js does not match its pinned hash: not loaded')
+  }
+  const url = URL.createObjectURL(new Blob([bytes], {type: 'text/javascript'}))
+  importScripts(url)
+  URL.revokeObjectURL(url)
+}
 
 let model = null
 let labels = []
@@ -20,7 +43,7 @@ let labels = []
  */
 const load = async (modelUrl) => {
   const started = performance.now()
-  importScripts(TF_CDN)
+  await importTf()
   await tf.ready()
   const base = modelUrl.endsWith('/') ? modelUrl : modelUrl + '/'
   const [loaded, metadata] = await Promise.all([
