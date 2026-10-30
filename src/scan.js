@@ -69,9 +69,17 @@ const POSTER_READINGS_KEPT = 15
  * ML mode: the object counts as in the stencil after this many frames running at this confidence.
  * Two frames at 0.6 fired before the object sat in the outline, and it was placed beside it.
  */
-const STENCIL_FRAMES = 3
 const STENCIL_THRESHOLD = 0.8
 const STENCIL_INTERVAL_MS = 500
+/**
+ * ML mode: the object has to stay recognised in the stencil this long, with the phone held steady,
+ * before it counts. On the phone it fired the moment the object came into the outline's square,
+ * before it sat in it, so it was placed off. A hand that moves or turns more than this starts the
+ * wait again; the scale is the median of the readings taken meanwhile.
+ */
+const STENCIL_HOLD_MS = 2500
+const STENCIL_STEADY_MOVE = 0.25    // scene units the camera may drift while holding
+const STENCIL_STEADY_TURN = 0.15    // radians the camera may turn while holding (about 9 degrees)
 /**
  * ML mode, after placing: the object follows its own tracked points (fitCylinderCentre), which
  * are seen from more sides as the visitor walks about, so the depth a single ray guessed is
@@ -279,15 +287,37 @@ const scanPipelineModule = () => {
     stencil = createStencil(shape, view)
     hint.setText(TEXT.scanFitObject)
     debug?.set('stencil', `drawn for ${shape.distance.toFixed(1)} m, foot at y=${shape.footY.toFixed(0)} px`)
-    let streak = 0
+    let holdSince = null          // when the object has been in the outline since, steadily
+    let holdPosition = null
+    let holdDirection = null
+    let scaleReadings = []
     const onFrame = (best, ms) => {
       debug?.set('ml frame', `${best.className} ${(best.probability * 100).toFixed(0)}% (${best.crop}), ${ms.toFixed(0)} ms`)
       if (state !== 'found') return
       const hit = best.className === exhibit.mlTarget && best.probability >= STENCIL_THRESHOLD
-      streak = hit ? streak + 1 : 0
-      stencil?.setMatched(hit)
-      if (streak >= STENCIL_FRAMES) {
-        onRecognised(best, shape, view)
+      const direction = camera.getWorldDirection(new THREE.Vector3())
+      const steady = holdSince !== null &&
+        camera.position.distanceTo(holdPosition) <= STENCIL_STEADY_MOVE &&
+        direction.angleTo(holdDirection) <= STENCIL_STEADY_TURN
+      if (!hit || !steady) {
+        holdSince = hit ? performance.now() : null
+        holdPosition = camera.position.clone()
+        holdDirection = direction
+        scaleReadings = []
+      }
+      stencil?.setMatched(hit && holdSince !== null)
+      if (!hit) {
+        hint.setText(TEXT.scanFitObject)
+        debug?.set('hold', 'object not in the outline')
+        return
+      }
+      const held = performance.now() - holdSince
+      hint.setText(TEXT.scanHoldSteady)
+      debug?.set('hold', `${(held / 1000).toFixed(1)} s of ${STENCIL_HOLD_MS / 1000}`)
+      const reading = stencilScaleReading(shape, view)
+      reading && scaleReadings.push(reading)
+      if (held >= STENCIL_HOLD_MS) {
+        onRecognised(best, shape, view, scaleReadings.length > 0 ? median(scaleReadings) : 0)
       }
     }
     mlDetectorStop = startDetection(renderer.domElement, () => {}, {
@@ -301,24 +331,39 @@ const scanPipelineModule = () => {
   }
 
   /**
-   * ML mode: the object sat in the stencil for STENCIL_FRAMES frames running. It stands where the
+   * ML mode: units per metre from the stencil, right now: the object fills the outline, so the
+   * camera is about shape.distance metres from its middle and a known distance from its foot, and
+   * the ray to the outline's foot gives that distance in scene units.
+   *
+   * @returns {number | null} null when the outline's foot does not meet the floor.
+   */
+  const stencilScaleReading = (shape, view) => {
+    const point = floorPointAt(view.left + shape.centreX, view.top + shape.footY)
+    if (!point) {
+      return null
+    }
+    const {camera} = XR8.Threejs.xrScene()
+    const tilt = Math.asin(THREE.MathUtils.clamp(-camera.getWorldDirection(forward).y, 0, 1))
+    const metres = footDistanceAt({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, shape.distance, tilt)
+    return camera.position.distanceTo(point) / metres
+  }
+
+  /**
+   * ML mode: the object sat in the stencil, steadily, for STENCIL_HOLD_MS. It stands where the
    * stencil's bottom edge meets the floor (or where the visitor tapped, if they did); if that misses
    * the floor, the visitor is asked to tap instead.
+   *
+   * @param {number} scale - Units per metre, the median of the readings while holding; 0 for none.
    */
-  const onRecognised = (best, shape, view) => {
+  const onRecognised = (best, shape, view, scale) => {
     mlDetectorStop()
     mlDetectorStop = null
     debug?.set('ml', `${best.className} ${(best.probability * 100).toFixed(0)}%`)
     const point = pendingTap ?? floorPointAt(view.left + shape.centreX, view.top + shape.footY)
     removeStencil()
-    if (point && !pendingTap) {
-      // The object fills the outline, so the camera is about shape.distance metres from its middle,
-      // and the foot is a known distance further: a scale that does not depend on the poster (which
-      // on the phone was sometimes far off).
-      const {camera} = XR8.Threejs.xrScene()
-      const tilt = Math.asin(THREE.MathUtils.clamp(-camera.getWorldDirection(forward).y, 0, 1))
-      const metres = footDistanceAt({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, shape.distance, tilt)
-      stencilUnitsPerMetre = camera.position.distanceTo(point) / metres
+    if (point && !pendingTap && scale > 0) {
+      // A scale that does not depend on the poster (which on the phone was sometimes far off).
+      stencilUnitsPerMetre = scale
       debug?.set('units per metre', `${unitsPerMetre().toFixed(2)} (stencil; poster said ${posterScale > 0 ? (posterScale / exhibit.posterWidth).toFixed(2) : '-'})`)
     }
     if (point) {
