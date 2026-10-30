@@ -185,8 +185,7 @@ export const STRINGS = {
 export const LANGS = ['fi', 'en', 'sv', 'uk']
 export const LANG_LABELS = {fi: 'FI', en: 'EN', sv: 'SV', uk: 'UA'}
 export const LANG_NAMES = {fi: 'Suomi', en: 'English', sv: 'Svenska', uk: 'Українська'}
-// English for now, while the developer tests (2026-10-23); the museum's default is Finnish ('fi').
-export const DEFAULT_LANG = 'en'
+export const DEFAULT_LANG = 'fi'
 
 // localStorage is shared by every site on the same host (all of someone.github.io), and the live
 // site stores its choice under the plain key `lumina-ar-lang`: so this one carries the site's
