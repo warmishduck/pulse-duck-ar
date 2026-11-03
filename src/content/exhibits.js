@@ -93,6 +93,8 @@ export const EXHIBITS = {
   'test-panel': {
     creatures: [at('pinecone', 0, 0, GROUNDED)], mlTarget: 'electrical-panel', mount: 'wall',
     objectSize: {width: 0.365, height: 0.42, depth: 0.16},
+    // Trained on frames of a video of the panel and on background cut from the same frames.
+    modelUrl: 'https://teachablemachine.withgoogle.com/models/uvKjSD9UM/',
   },
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
