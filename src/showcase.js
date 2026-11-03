@@ -598,7 +598,7 @@ export const createShowcase = ({
       dust.forEach((puff) => puff && puff.update(dt))
 
       groups.forEach((group, i) => {
-        const {spinSpeed = 0, phase = 0, hover = 0.08, bob = 0.05} = items[i]
+        const {spinSpeed = 0, phase = 0, hover = 0.08, bob = 0.05, pulse = 0.05} = items[i]
 
         group.rotation.y += dt * spinSpeed
 
@@ -617,7 +617,7 @@ export const createShowcase = ({
 
         // Subtle "heartbeat" scale pulse at BPM, offset per item so they don't beat in unison.
         const beat = t * (BPM / 60) * Math.PI * 2 + phase
-        group.scale.setScalar(1 + Math.sin(beat) * 0.05)  // ±5% breathing
+        group.scale.setScalar(1 + Math.sin(beat) * pulse)  // ±5% breathing by default
       })
     },
   }

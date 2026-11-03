@@ -51,9 +51,9 @@ import {CREATURES} from './creatures.js'
  *   when it is not the shared one in src/ml/model-config.js.
  */
 
-// Standing still on the floor: no hover, bob or turntable spin, so it walks round an object
+// Standing still on the floor: no hover, bob, turntable spin or heartbeat pulse, so it walks round an object
 // facing the way it goes and stays on the floor.
-const GROUNDED = {hover: 0, bob: 0, spinSpeed: 0}
+const GROUNDED = {hover: 0, bob: 0, spinSpeed: 0, pulse: 0}
 
 const at = (id, x = 0, z = -0.2, extra = {}) => ({id, x, z, ...extra})
 
