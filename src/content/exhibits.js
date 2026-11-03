@@ -86,12 +86,11 @@ export const EXHIBITS = {
     creatures: [at('glowcap', 0, 0, GROUNDED)], imageTarget: 'cats-painting', mlTarget: 'vacuum-station',
     objectSize: {radius: 0.17, height: 0.4}, posterWidth: 0.36,
   },
-  // An electrical panel on a wall, no poster. objectSize is estimated from a video (about 30 cm wide,
-  // by a cable conduit and the label beside it; from the grey box's top to the black box's bottom
-  // about 1.13 times that; depth a guess): measure the real one.
+  // An electrical panel on a wall, no poster. Measured: the grey box 36.5 cm wide, 42 cm from its
+  // top to the black box's bottom, sticking out 16 cm from the wall.
   'test-panel': {
     creatures: [at('pinecone', 0, 0, GROUNDED)], mlTarget: 'electrical-panel', mount: 'wall',
-    objectSize: {width: 0.30, height: 0.34, depth: 0.12},
+    objectSize: {width: 0.365, height: 0.42, depth: 0.16},
   },
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},
