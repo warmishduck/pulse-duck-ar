@@ -43,6 +43,10 @@ import {CREATURES} from './creatures.js'
  * @property {number} [posterWidth] - Metres: the real width of the poster's image target, i.e. of
  *   the crop image-target-cli made (its shorter side), which the engine reports as `detail.scale`
  *   in scene units. It turns metres into this session's scene units, which differ every session.
+ * @property {'wall'} [mount] - 'wall': the mlTarget object is a box hanging on a wall, and objectSize
+ *   is {width, height, depth} in metres (its front face, and how far it sticks out); the creature
+ *   comes up from behind its top edge and sits on it. Without mount it stands on the floor.
+ *   An ML exhibit without imageTarget opens straight into the stencil, without a poster.
  */
 
 // Standing still on the floor: no hover, bob or turntable spin, so it walks round an object
@@ -81,6 +85,13 @@ export const EXHIBITS = {
   'test-vacuum': {
     creatures: [at('glowcap', 0, 0, GROUNDED)], imageTarget: 'cats-painting', mlTarget: 'vacuum-station',
     objectSize: {radius: 0.17, height: 0.4}, posterWidth: 0.36,
+  },
+  // An electrical panel on a wall, no poster. objectSize is estimated from a video (about 30 cm wide,
+  // by a cable conduit and the label beside it; from the grey box's top to the black box's bottom
+  // about 1.13 times that; depth a guess): measure the real one.
+  'test-panel': {
+    creatures: [at('pinecone', 0, 0, GROUNDED)], mlTarget: 'electrical-panel', mount: 'wall',
+    objectSize: {width: 0.30, height: 0.34, depth: 0.12},
   },
   // The whole demo: all the creatures, and the game a button away.
   demo: {creatures: TOGETHER, game: 'light_the_way'},

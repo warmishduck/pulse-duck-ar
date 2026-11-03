@@ -128,3 +128,46 @@ export const fitCylinderCentre = (points, guess, {floorY, radius, height, viewer
   }
   return {centre: new THREE.Vector3(x, floorY, z), count: used.length}
 }
+
+/**
+ * @typedef {Object} WallBoxSeat
+ * @property {THREE.Vector3} boxCentre - The middle of the box (for an occluder of its size).
+ * @property {THREE.Vector3} seat - The middle of its top, where a creature sits.
+ * @property {THREE.Vector3} emergeFrom - Below the seat inside the box, where the creature starts so
+ *   that it comes up from behind the top edge.
+ * @property {number} yaw - Radians about y that turn content (facing +z) and the box to the camera.
+ */
+
+/**
+ * Where a creature sits on a box hanging on a wall, from two rays through the box's outline on the
+ * screen: one through its middle, one through the middle of its top edge. The box's front face is
+ * taken as upright and facing the camera, at `distance` along the middle ray.
+ *
+ * @param {{x: number, y: number, z: number}} cameraPosition
+ * @param {THREE.Vector3} middleDirection - Unit ray to the middle of the box's face.
+ * @param {THREE.Vector3} topDirection - Unit ray to the middle of its top edge.
+ * @param {number} distance - Along middleDirection to the face, scene units.
+ * @param {{height: number, depth: number}} size - Scene units.
+ * @param {number} rise - How far below the top the creature starts, scene units.
+ * @returns {WallBoxSeat | null} null when the top ray does not meet the face's plane in front.
+ */
+export const sitOnWallBox = (cameraPosition, middleDirection, topDirection, distance, {height, depth}, rise) => {
+  const camera = new THREE.Vector3(cameraPosition.x, cameraPosition.y, cameraPosition.z)
+  const faceMiddle = camera.clone().addScaledVector(middleDirection, distance)
+  const toCamera = new THREE.Vector3(camera.x - faceMiddle.x, 0, camera.z - faceMiddle.z)
+  if (toCamera.lengthSq() < 1e-8) {
+    return null
+  }
+  toCamera.normalize()
+  // The top ray meets the face's plane (through faceMiddle, facing toCamera) at the top front edge.
+  const towardsFace = -topDirection.dot(toCamera)
+  if (towardsFace <= 1e-6) {
+    return null
+  }
+  const along = faceMiddle.clone().sub(camera).dot(toCamera) / -towardsFace
+  const topFront = camera.clone().addScaledVector(topDirection, along)
+  const seat = topFront.clone().addScaledVector(toCamera, -depth / 2)
+  const boxCentre = seat.clone().setY(topFront.y - height / 2)
+  const emergeFrom = seat.clone().setY(seat.y - rise)
+  return {boxCentre, seat, emergeFrom, yaw: Math.atan2(toCamera.x, toCamera.z)}
+}

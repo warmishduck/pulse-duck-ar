@@ -49,8 +49,8 @@ src/
   scan.js                 Object scanner (/?scan): find object → glow → exhibit on the floor ahead
   floor-spot.js           Pure maths: where on the floor the scanner places content (tested)
   marker-anchor.js        Pure maths for /?scan&marker: wall plane, marker position, walk-out start (tested)
-  object-path.js          Pure maths for ML exhibits: the walk from behind a free-standing object round to its front (tested)
-  stencil.js              ML exhibits: the outline the visitor fits the object into (shape maths tested) and its SVG overlay
+  object-path.js          Pure maths for ML exhibits: the walk round a free-standing object, the seat on top of a box on a wall (tested)
+  stencil.js              ML exhibits: the outline the visitor fits the object into, a cylinder on the floor or a box on a wall (shape maths tested), and its SVG overlay
   ml/
     model-config.js       URL of the Teachable Machine model
     object-detector.js    Cuts camera frames and hands them to the worker; loadModel / startDetection

@@ -1,5 +1,5 @@
 import {
-  CENTRE_SHARE, MAX_DISTANCE, MAX_HEIGHT_SHARE, MIN_DISTANCE, PREFERRED_DISTANCE, VIEW_TILT, footDistanceAt, stencilShape,
+  CENTRE_SHARE, MAX_DISTANCE, MAX_HEIGHT_SHARE, MIN_DISTANCE, PREFERRED_DISTANCE, VIEW_TILT, boxStencilShape, footDistanceAt, stencilShape,
 } from '../src/stencil.js'
 
 let failures = 0
@@ -44,6 +44,20 @@ const tiny = stencilShape({radius: 0.03, height: 0.08}, projection, view)
 check('a tiny object: drawn for closer, but not closer than the minimum', tiny.distance < PREFERRED_DISTANCE && tiny.distance >= MIN_DISTANCE, tiny.distance.toFixed(2))
 const huge = stencilShape({radius: 2, height: 10}, projection, view)
 check('a huge object: no further than the maximum', huge.distance <= MAX_DISTANCE)
+
+// ---------------------------------------------------------------- a box on a wall
+const panel = {width: 0.30, height: 0.34}
+const box = boxStencilShape(panel, projection, view)
+check('a box: a rectangle, no ellipse', box.kind === 'box' && box.capHeight === 0 && box.footY === box.bottomY)
+check('a box: drawn for the preferred distance when it fits', near(box.distance, PREFERRED_DISTANCE), box.distance.toFixed(2))
+check('a box: as tall and wide as the face at that distance',
+  near(box.bottomY - box.topY, panel.height * (focalY / box.distance) * (view.height / 2)) &&
+  near(box.width, panel.width * (focalX / box.distance) * (view.width / 2)))
+check('a box: centred where the cylinder is', near((box.topY + box.bottomY) / 2, CENTRE_SHARE * view.height) && near(box.centreX, view.width / 2))
+check('a box: the classifier\'s square holds it', box.crop.y <= box.topY && box.crop.y + box.crop.size >= box.bottomY &&
+  box.crop.x <= box.centreX - box.width / 2 && box.crop.x + box.crop.size >= box.centreX + box.width / 2)
+const bigBox = boxStencilShape({width: 1, height: 2}, projection, view)
+check('a tall box: drawn for further away, still fits', bigBox.distance > PREFERRED_DISTANCE && (bigBox.bottomY - bigBox.topY) <= MAX_HEIGHT_SHARE * view.height + 1e-6)
 
 console.log(failures === 0 ? '\nALL STENCIL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures ? 1 : 0)

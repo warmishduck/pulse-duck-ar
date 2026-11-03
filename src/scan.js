@@ -31,8 +31,8 @@ import {FLOOR_PITCH, floorHeight, floorSpot, localFloorHeight, median, wallDista
 import {
   MARKER_SEARCH_ANGLE, MIN_MARKER_POINTS, contentScale, emergeStart, markerPosition, wallPlane, yawToward,
 } from './marker-anchor'
-import {fitCylinderCentre, walkAroundObject} from './object-path'
-import {createStencil, footDistanceAt, stencilShape} from './stencil'
+import {fitCylinderCentre, sitOnWallBox, walkAroundObject} from './object-path'
+import {boxStencilShape, createStencil, footDistanceAt, stencilShape} from './stencil'
 import {createDebugPanel} from './debug-panel'
 import {initScenePipelineModule, placeCameraAtStart} from './threejs-scene-init'
 import {createSparkBurst} from './spark'
@@ -78,6 +78,12 @@ const STENCIL_INTERVAL_MS = 500
  * wait again; the scale is the median of the readings taken meanwhile.
  */
 const STENCIL_HOLD_MS = 2500
+/**
+ * ML mode, a box on a wall: the box's distance is read from the tracked points within this angle
+ * (radians, about 6°) of the ray to its middle; a box a step away spans about that much.
+ */
+const WALL_BOX_SEARCH_ANGLE = 0.1
+const WALL_BOX_MIN_POINTS = 4
 const STENCIL_STEADY_MOVE = 0.25    // scene units the camera may drift while holding
 const STENCIL_STEADY_TURN = 0.15    // radians the camera may turn while holding (about 9 degrees)
 /**
@@ -253,6 +259,7 @@ const scanPipelineModule = () => {
   let pendingTap = null        // ML mode: where the visitor tapped before the object was recognised
   let objectFit = null         // ML mode, once placed: where the object stands, following its points (followObject)
   let stencil = null           // ML mode: the outline the visitor fits the object into (stencil.js)
+  let wallSeat = null           // ML mode, a box on a wall: where the creature will sit (onWallBoxRecognised)
   let stencilUnitsPerMetre = 0 // ML mode: the scale the stencil gave (onRecognised), 0 until then
   let lastCameraPosition = null  // ?debug: the camera one frame ago, to spot the world jumping
   let worldJumps = 0
@@ -283,9 +290,14 @@ const scanPipelineModule = () => {
     // The stencil: the visitor fits the object into it, and the classifier looks only inside it,
     // so a similar object beside it does not count (stencil.js).
     const view = canvas.getBoundingClientRect()
-    const shape = stencilShape({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, camera.projectionMatrix.elements, view)
+    const onWall = exhibit.mount === 'wall'
+    const shape = onWall
+      ? boxStencilShape(exhibit.objectSize, camera.projectionMatrix.elements, view)
+      : stencilShape({...DEFAULT_OBJECT_SIZE, ...exhibit.objectSize}, camera.projectionMatrix.elements, view)
     stencil = createStencil(shape, view)
-    hint.setText(TEXT.scanFitObject)
+    // Without a poster first there is nothing to have "found" yet.
+    const fitHint = exhibit.imageTarget ? TEXT.scanFitObject : TEXT.scanFitObjectStart
+    hint.setText(fitHint)
     debug?.set('stencil', `drawn for ${shape.distance.toFixed(1)} m, foot at y=${shape.footY.toFixed(0)} px`)
     let holdSince = null          // when the object has been in the outline since, steadily
     let holdPosition = null
@@ -307,14 +319,14 @@ const scanPipelineModule = () => {
       }
       stencil?.setMatched(hit && holdSince !== null)
       if (!hit) {
-        hint.setText(TEXT.scanFitObject)
+        hint.setText(fitHint)
         debug?.set('hold', 'object not in the outline')
         return
       }
       const held = performance.now() - holdSince
       hint.setText(TEXT.scanHoldSteady)
       debug?.set('hold', `${(held / 1000).toFixed(1)} s of ${STENCIL_HOLD_MS / 1000}`)
-      const reading = stencilScaleReading(shape, view)
+      const reading = onWall ? wallBoxDistanceReading(shape, view) : stencilScaleReading(shape, view)
       reading && scaleReadings.push(reading)
       if (held >= STENCIL_HOLD_MS) {
         onRecognised(best, shape, view, scaleReadings.length > 0 ? median(scaleReadings) : 0)
@@ -349,16 +361,98 @@ const scanPipelineModule = () => {
   }
 
   /**
+   * The ray from the camera through a point of the screen.
+   *
+   * @returns {THREE.Ray} World space; the direction is a unit vector.
+   */
+  const screenRay = (clientX, clientY) => {
+    const {camera} = XR8.Threejs.xrScene()
+    const rect = canvas.getBoundingClientRect()
+    tapRaycaster.setFromCamera(new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1
+    ), camera)
+    return tapRaycaster.ray.clone()
+  }
+
+  /**
+   * ML mode, a box on a wall: how far its face is, right now, from the tracked points round the ray
+   * to the outline's middle.
+   *
+   * @returns {number | null} Scene units; null with too few points there.
+   */
+  const wallBoxDistanceReading = (shape, view) => {
+    const ray = screenRay(view.left + shape.centreX, view.top + (shape.topY + shape.bottomY) / 2)
+    return wallDistance(worldPoints, ray.origin, ray.origin.clone().add(ray.direction), {
+      angle: WALL_BOX_SEARCH_ANGLE, minPoints: WALL_BOX_MIN_POINTS,
+    })
+  }
+
+  /**
+   * ML mode, a box on a wall: the box sat in the outline, so it is about shape.distance metres away,
+   * and the points say how far that is in scene units: that is the scale. The creature will sit on
+   * the box's top, coming up from behind its top edge (object-path.js sitOnWallBox).
+   *
+   * @param {number} distance - Scene units to the box's face (median while holding); 0 for none.
+   */
+  const onWallBoxRecognised = (shape, view, distance) => {
+    const metres = exhibit.objectSize
+    if (distance > 0) {
+      stencilUnitsPerMetre = distance / shape.distance
+    }
+    const upm = unitsPerMetre()
+    const faceDistance = distance > 0 ? distance : shape.distance * upm
+    const middle = screenRay(view.left + shape.centreX, view.top + (shape.topY + shape.bottomY) / 2)
+    const top = screenRay(view.left + shape.centreX, view.top + shape.topY)
+    const scale = OBJECT_SCALE_FALLBACK * upm / DEFAULT_UNITS_PER_METRE
+    const size = {width: metres.width * upm, height: metres.height * upm, depth: metres.depth * upm}
+    const sit = sitOnWallBox(middle.origin, middle.direction, top.direction, faceDistance, size, tallestCreature(exhibit) * scale)
+    debug?.set('units per metre', `${upm.toFixed(2)} (${distance > 0 ? `wall box, ${faceDistance.toFixed(2)} away` : 'no points on the box: guessed'})`)
+    if (!sit) {
+      debug?.set('wall box', 'the top ray missed the face: try again')
+      startMlDetection()
+      return
+    }
+    wallSeat = {...sit, size, scale}
+    debug?.set('wall box', `seat ${sit.seat.x.toFixed(2)}, ${sit.seat.y.toFixed(2)}, ${sit.seat.z.toFixed(2)}; ${size.width.toFixed(2)} x ${size.height.toFixed(2)} x ${size.depth.toFixed(2)}`)
+    glow.show({position: sit.boxCentre, scale: size.height})
+    state = 'found_object'
+    objectFoundSeconds = 0
+  }
+
+  /** ML mode, a box on a wall: the box as an occluder, and the creature coming up onto its top. */
+  const placeOnWallBox = () => {
+    const {scene} = XR8.Threejs.xrScene()
+    const {boxCentre, seat, emergeFrom, yaw, size, scale} = wallSeat
+    const geometry = new THREE.BoxGeometry(size.width, size.height, size.depth)
+    const occluder = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({colorWrite: false}))
+    occluder.renderOrder = -1
+    occluder.position.copy(boxCentre)
+    occluder.rotation.y = yaw
+    if (debug) {
+      occluder.add(new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({color: 0x00ffff, wireframe: true})))
+    }
+    scene.add(occluder)
+    placeExhibit({position: seat, yaw, scale}, {puzzlesEnabled: false, emergeFrom: [emergeFrom]})
+  }
+
+  /**
    * ML mode: the object sat in the stencil, steadily, for STENCIL_HOLD_MS. It stands where the
    * stencil's bottom edge meets the floor (or where the visitor tapped, if they did); if that misses
    * the floor, the visitor is asked to tap instead.
    *
    * @param {number} scale - Units per metre, the median of the readings while holding; 0 for none.
+   *   For a box on a wall: the median distance to its face instead (see onWallBoxRecognised).
    */
   const onRecognised = (best, shape, view, scale) => {
     mlDetectorStop()
     mlDetectorStop = null
     debug?.set('ml', `${best.className} ${(best.probability * 100).toFixed(0)}%`)
+    if (exhibit.mount === 'wall') {
+      removeStencil()
+      onWallBoxRecognised(shape, view, scale)
+      return
+    }
     const point = pendingTap ?? floorPointAt(view.left + shape.centreX, view.top + shape.footY)
     removeStencil()
     if (point && !pendingTap && scale > 0) {
@@ -445,6 +539,9 @@ const scanPipelineModule = () => {
    * A tap before the object is recognised is kept for when it is, so it is not lost.
    */
   const onObjectTap = (event) => {
+    if (exhibit?.mount === 'wall') {
+      return
+    }
     const early = state === 'found' && exhibit?.mlTarget
     if (state !== 'tap_object' && !early) {
       return
@@ -729,6 +826,10 @@ const scanPipelineModule = () => {
       hint.setText(TEXT.scanMove)
       return
     }
+    if (wallSeat) {
+      placeOnWallBox()
+      return
+    }
     if (exhibit.mlTarget) {
       placeAroundObject(camera)
       return
@@ -832,6 +933,13 @@ const scanPipelineModule = () => {
       debug?.set('state', state)
       if (exhibit?.mlTarget) {
         loadMlModel().catch((e) => debug?.set('ml', `model load failed: ${e.message}`))
+      }
+      // An ML exhibit without a poster: straight to its stencil.
+      if (exhibit?.mlTarget && !exhibit.imageTarget) {
+        state = 'found'
+        debug?.set('state', state)
+        hint.setText(TEXT.scanFitObjectStart)
+        startMlDetection()
       }
       canvas.addEventListener('pointerdown', onObjectTap)
     },

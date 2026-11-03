@@ -108,7 +108,8 @@ export const initScenePipelineModule = (exhibit, {anchor = null, puzzlesEnabled 
     const to = route[leg + 1]
     const length = routeLengths[leg]
     const position = length > 0 ? from.clone().lerp(to, Math.min(1, distance / length)) : to.clone()
-    const heading = length > 0 ? Math.atan2(to.x - from.x, to.z - from.z) : null
+    // A leg straight up (coming up onto a box on a wall) has no heading: keep facing as before.
+    const heading = Math.hypot(to.x - from.x, to.z - from.z) > 1e-6 ? Math.atan2(to.x - from.x, to.z - from.z) : null
     return {position, heading}
   }
 

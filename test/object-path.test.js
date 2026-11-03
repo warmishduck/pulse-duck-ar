@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-import {END_ANGLE, MIN_FIT_POINTS, fitCylinderCentre, walkAroundObject} from '../src/object-path.js'
+import {END_ANGLE, MIN_FIT_POINTS, fitCylinderCentre, sitOnWallBox, walkAroundObject} from '../src/object-path.js'
 
 let failures = 0
 const check = (name, ok, detail = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? '  — ' + detail : ''}`); if (!ok) failures++ }
@@ -69,6 +69,21 @@ const farFit = fitCylinderCentre(side, farGuess, size)
 check('a tap a radius and more off: still the centre, on the far side of the points', farFit && Math.hypot(farFit.centre.x - truth.x, farFit.centre.z - truth.z) < 0.05,
   farFit ? `off by ${Math.hypot(farFit.centre.x - truth.x, farFit.centre.z - truth.z).toFixed(3)}, ${farFit.count} points` : 'no fit')
 check('points far from the guess are not used', fitCylinderCentre(side, {x: truth.x + 3, z: truth.z}, size) === null)
+
+// ---------------------------------------------------------------- sitting on a box on a wall
+// The camera in front of a box face whose middle is at (0, 1.2, 0), facing +z; the box 0.34 tall,
+// 0.12 deep, its top front edge at y = 1.37.
+const cam = new THREE.Vector3(0.1, 1.6, 1.3)
+const dirTo = (p) => p.clone().sub(cam).normalize()
+const faceMid = new THREE.Vector3(0, 1.2, 0)
+const topEdge = new THREE.Vector3(0, 1.37, 0)
+const sit = sitOnWallBox(cam, dirTo(faceMid), dirTo(topEdge), cam.distanceTo(faceMid), {height: 0.34, depth: 0.12}, 0.3)
+check('the seat is on the top, half the depth behind the front edge', sit && near(sit.seat.y, 1.37, 1e-6) && near(sit.seat.z, -0.06, 0.01) && near(sit.seat.x, 0, 0.01),
+  sit ? sit.seat.toArray().map((v) => v.toFixed(3)).join(', ') : 'null')
+check('the box\'s middle is half its height below the top', sit && near(sit.boxCentre.y, 1.2, 1e-6) && near(sit.boxCentre.z, -0.06, 0.01))
+check('it comes up from inside the box, below the seat', sit && near(sit.emergeFrom.y, 1.07, 1e-6) && near(sit.emergeFrom.z, sit.seat.z))
+check('it faces the camera', sit && Math.abs(sit.yaw - Math.atan2(0.1, 1.3)) < 0.02, sit?.yaw.toFixed(3))
+check('a top ray that points away: no seat', sitOnWallBox(cam, dirTo(faceMid), new THREE.Vector3(0, 0, 1), cam.distanceTo(faceMid), {height: 0.34, depth: 0.12}, 0.3) === null)
 
 console.log(failures === 0 ? '\nALL OBJECT PATH CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)
 process.exit(failures ? 1 : 0)
