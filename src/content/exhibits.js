@@ -47,6 +47,8 @@ import {CREATURES} from './creatures.js'
  *   is {width, height, depth} in metres (its front face, and how far it sticks out); the creature
  *   comes up from behind its top edge and sits on it. Without mount it stands on the floor.
  *   An ML exhibit without imageTarget opens straight into the stencil, without a poster.
+ * @property {string} [modelUrl] - The Teachable Machine model this exhibit's mlTarget is a class of,
+ *   when it is not the shared one in src/ml/model-config.js.
  */
 
 // Standing still on the floor: no hover, bob or turntable spin, so it walks round an object

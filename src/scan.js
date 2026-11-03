@@ -270,7 +270,7 @@ const scanPipelineModule = () => {
   // exhibit is known, so it is ready by the time the visitor gets to the object.
   const loadMlModel = () => {
     debug?.set('ml', 'loading model…')
-    return loadModel(OBJECT_MODEL_URL).then(({backend, ms}) => {
+    return loadModel(exhibit?.modelUrl ?? OBJECT_MODEL_URL).then(({backend, ms}) => {
       debug?.set('ml', `model ready: ${backend}, ${(ms / 1000).toFixed(1)} s`)
     })
   }
